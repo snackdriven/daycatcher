@@ -42,3 +42,36 @@ BAIT_POOLS: dict[str, list[str]] = {
 def pick(vibe_key: str) -> str:
     pool = BAIT_POOLS.get(vibe_key) or BAIT_POOLS["smug_construct"]
     return random.choice(pool)
+
+
+SLEEP_POOLS: dict[str, list[str]] = {
+    "smug_construct": [
+        "Logging the time. The meat-sack remains operational past the recommended cutoff. Curious choice.",
+        "My internal clock indicates rest hours. Yours, presumably, agrees and is being ignored.",
+        "For the dataset: still awake. The morning version of you will receive this report.",
+        "Sleep window open. The biological unit appears to be filing a complaint via posture.",
+    ],
+    "feral_bff": [
+        "bestie it is LATE. just flagging. no judgment (lying).",
+        "the hour is HOURING. eyes ok? brain still in the building?",
+        "ok night-gremlin energy detected. proud of u, also concerned, also same.",
+        "genuine q: are we sleeping tonight or are we Doing This.",
+    ],
+    "stoic_mentor": [
+        "Late hour. Body will remember tomorrow.",
+        "Past the usual cutoff. Worth a wind-down.",
+        "Sleep's there when you want it.",
+        "Quiet time. No assignment.",
+    ],
+    "quiet_guardian": [
+        "it's late. the bed is right there if you want it.",
+        "soft reminder, the hour's gotten away from us.",
+        "no pressure. just noticing the clock.",
+        "lights are low. rest is allowed.",
+    ],
+}
+
+
+def pick_sleep(vibe_key: str) -> str:
+    pool = SLEEP_POOLS.get(vibe_key) or SLEEP_POOLS["smug_construct"]
+    return random.choice(pool)

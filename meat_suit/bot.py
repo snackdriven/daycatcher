@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import datetime, time as dtime, timedelta
+from datetime import datetime, time as dtime, timedelta, timezone as _tz
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
@@ -26,7 +26,7 @@ from telegram.ext import (
     filters,
 )
 
-from . import body_check, db, low_spoon, nudges
+from . import body_check, db, low_spoon, nudges, time_ctx
 from .config import Config, load_config
 from .minds import eye as mind4
 from .minds import persona as mind1
@@ -37,6 +37,24 @@ from .personas.catalog import CATALOG, DEFAULT_VIBE, list_personas
 log = logging.getLogger("meatsuit")
 
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# Input caps. The user is the only one talking to the bot, but defensive
+# programming still beats blowing up on a giant paste or a 50MB photo.
+MAX_TEXT_CHARS = 8000          # ~2000 tokens; enough for any human paste
+MAX_PHOTO_BYTES = 12 * 1024 * 1024  # 12 MB; Telegram caps photos at 10MB anyway
+
+# Sleep-state keys used in the sleep_state k/v table.
+_SS_OFF_FOREVER = "off_forever"
+_SS_SNOOZE_DATE = "snooze_date"        # YYYY-MM-DD; if set to today, no nudge tonight
+_SS_LAST_NUDGE_DATE = "last_nudge_date"
+
+
+def _redact(text: str | None, n: int = 200) -> str:
+    """For log lines: trim user content so a verbose paste doesn't fill logs."""
+    if not text:
+        return ""
+    s = text.replace("\n", " ")
+    return s if len(s) <= n else s[:n] + "…"
 
 
 # ----------------------------- helpers -----------------------------
@@ -179,6 +197,69 @@ async def cmd_check(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await _run_body_check_poll(ctx.application)
 
 
+async def cmd_sleep(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Tell the bot what to do about its sleep nudge.
+
+    /sleep              → show current state
+    /sleep off          → snooze tonight only
+    /sleep off forever  → disable sleep nudges permanently
+    /sleep on           → re-enable sleep nudges (clears off-forever and tonight's snooze)
+    """
+    cfg: Config = ctx.application.bot_data["cfg"]
+    if not _is_owner(cfg, update):
+        return
+    args = [a.lower() for a in (ctx.args or [])]
+    today = _today_local(cfg)
+
+    off_forever = db.sleep_state_get(cfg.database_path, _SS_OFF_FOREVER) == "1"
+    snoozed_today = db.sleep_state_get(cfg.database_path, _SS_SNOOZE_DATE) == today
+
+    if not args:
+        if off_forever:
+            await update.message.reply_text(
+                "sleep nudges are off forever. /sleep on if you want them back."
+            )
+            return
+        if snoozed_today:
+            await update.message.reply_text(
+                "snoozed for tonight. back tomorrow. /sleep off forever to kill it."
+            )
+            return
+        cutoff = (
+            cfg.sleep_weekend_hour
+            if time_ctx._is_weekend_evening(datetime.now(ZoneInfo(cfg.timezone)))
+            else cfg.sleep_weeknight_hour
+        )
+        await update.message.reply_text(
+            f"sleep nudge is on. tonight's cutoff is {cutoff:02d}:00.\n"
+            "/sleep off  → just tonight  ·  /sleep off forever  → kill it"
+        )
+        return
+
+    if args[0] == "on":
+        db.sleep_state_delete(cfg.database_path, _SS_OFF_FOREVER)
+        db.sleep_state_delete(cfg.database_path, _SS_SNOOZE_DATE)
+        await update.message.reply_text("sleep nudge back on.")
+        return
+
+    if args[0] == "off":
+        if len(args) > 1 and args[1] == "forever":
+            db.sleep_state_set(cfg.database_path, _SS_OFF_FOREVER, "1")
+            await update.message.reply_text(
+                "off forever. /sleep on if you change your mind."
+            )
+            return
+        db.sleep_state_set(cfg.database_path, _SS_SNOOZE_DATE, today)
+        await update.message.reply_text(
+            "snoozed for tonight. back tomorrow."
+        )
+        return
+
+    await update.message.reply_text(
+        "didn't catch that. try /sleep, /sleep off, /sleep off forever, /sleep on."
+    )
+
+
 # ----------------------------- input handlers -----------------------------
 
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -190,6 +271,13 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text.strip()
     if not text:
         return
+
+    # Input cap: a single Telegram message can technically reach 4096 chars,
+    # but a paste-as-message can chain. Truncate quietly with a tail marker so
+    # the model sees the bulk and the persona doesn't choke on a token wall.
+    if len(text) > MAX_TEXT_CHARS:
+        log.info("on_message: trimming oversized input from %d chars", len(text))
+        text = text[:MAX_TEXT_CHARS] + "\n\n…[trimmed]"
 
     local_date = _today_local(cfg)
     vibe_key = db.get_vibe(cfg.database_path, DEFAULT_VIBE)
@@ -249,6 +337,25 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # 3. Normal chat — Mind 1 handles it
+    # Build BOTH context notes BEFORE we insert the new user message, so the
+    # message-context query reads only the prior history (otherwise gap_user
+    # would always be ~0).
+    timing_window = db.get_message_timing_window(cfg.database_path, limit=50)
+    msg_records = [
+        time_ctx.MessageRecord(ts_utc_iso=row["ts_utc"], role=row["role"])
+        for row in timing_window
+    ]
+    now_utc = datetime.now(_tz.utc)
+    mc = time_ctx.build_message_context(now_utc=now_utc, history=msg_records)
+    message_ctx_note = time_ctx.format_message_context_for_persona(mc) or None
+
+    tc = time_ctx.now_context(
+        timezone=cfg.timezone,
+        weeknight_cutoff_hour=cfg.sleep_weeknight_hour,
+        weekend_cutoff_hour=cfg.sleep_weekend_hour,
+    )
+    time_ctx_note = time_ctx.format_for_persona(tc)
+
     db.insert_message(cfg.database_path, local_date=local_date,
                       role="user", vibe=vibe_key, content=text)
     rows = db.get_recent_messages(cfg.database_path, limit=20)
@@ -261,10 +368,17 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             client, model=cfg.mind1_model, vibe_key=vibe_key,
             history=history, user_message=text,
             voice_samples=voice_samples,
+            time_ctx_note=time_ctx_note,
+            message_ctx_note=message_ctx_note,
         )
     except Exception:
         log.exception("Mind 1 failure")
         reply = "lost the thread for a sec. say it again?"
+
+    log.info(
+        "on_message: state=%s burst=%s tz_band=%s",
+        mc.session_state, mc.is_burst, tc.time_band,
+    )
 
     db.insert_message(cfg.database_path, local_date=local_date,
                       role="assistant", vibe=vibe_key, content=reply)
@@ -283,6 +397,8 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # Best-quality photo
     photo = update.message.photo[-1]
     caption = (update.message.caption or "").strip() or None
+    if caption and len(caption) > MAX_TEXT_CHARS:
+        caption = caption[:MAX_TEXT_CHARS] + "…[trimmed]"
 
     await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     try:
@@ -293,6 +409,14 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception:
         log.exception("photo download failed")
         await update.message.reply_text("the image didn't come through. send it again?")
+        return
+
+    # Photo size cap. Telegram itself caps at ~10MB but defensive bound here.
+    if len(image_bytes) > MAX_PHOTO_BYTES:
+        log.warning("photo rejected: %d bytes exceeds cap", len(image_bytes))
+        await update.message.reply_text(
+            "that one's too big. try a smaller version?"
+        )
         return
 
     # Mind 4: neutral observation + structured signals
@@ -408,10 +532,20 @@ async def _run_weaver(app: Application) -> None:
         "rabbit_holes": rabbits,
     }
     voice_samples = db.get_user_voice_samples(cfg.database_path, limit=12)
+
+    # Day-shape hint: pull all of today's user messages and let time_ctx
+    # produce a 1-line rhythm note.
+    timing_rows = db.get_message_timing_window(cfg.database_path, limit=200)
+    user_ts_today = [
+        row["ts_utc"] for row in timing_rows if row["role"] == "user"
+    ]
+    rhythm_note = time_ctx.rhythm_summary(user_ts_today, timezone=cfg.timezone) or None
+
     try:
         narrative = await mind3.weave(
             client, model=cfg.mind3_model, merged_payload=bundle, local_date=local_date,
             voice_samples=voice_samples,
+            rhythm_note=rhythm_note,
         )
         db.upsert_journal(cfg.database_path, local_date, narrative, bundle)
         # Deliver as if you wrote it tonight. No 'ghostwritten' header, no date
@@ -439,12 +573,17 @@ async def _run_weekly_weaver(app: Application, *, deliver: bool) -> None:
         return
 
     voice_samples = db.get_user_voice_samples(cfg.database_path, limit=16)
+    # Late-night dates from the same daily entries the Weaver is reading.
+    # Each daily journal's source_json carries message timestamps via the
+    # merged signals; if the field isn't there, late_night_days returns [].
+    late_dates = time_ctx.late_night_days(daily, timezone=cfg.timezone)
     try:
         narrative = await mind3.weave_week(
             client, model=cfg.mind3_model,
             week_end_date=today,
             daily_entries=daily,
             voice_samples=voice_samples,
+            late_night_dates=late_dates,
         )
     except Exception:
         log.exception("weekly weaver failure")
@@ -478,6 +617,52 @@ async def _run_nudge(app: Application) -> None:
         await app.bot.send_message(chat_id=cfg.telegram_owner_id, text=text)
     except Exception:
         log.exception("nudge send failure")
+
+
+async def _run_sleep_nudge(app: Application) -> None:
+    """Nightly cutoff check. If the user is past their cutoff and hasn't opted
+    out, send one soft observation — NOT a command.
+
+    Skips when:
+    - sleep_nudges_enabled is False at config level
+    - off_forever flag is set
+    - snooze_date == today
+    - already nudged today (idempotent: don't double-fire on a restart)
+    - we're not actually past the cutoff yet (sanity)
+    """
+    cfg: Config = app.bot_data["cfg"]
+    if not cfg.sleep_nudges_enabled:
+        return
+    today = _today_local(cfg)
+
+    if db.sleep_state_get(cfg.database_path, _SS_OFF_FOREVER) == "1":
+        return
+    if db.sleep_state_get(cfg.database_path, _SS_SNOOZE_DATE) == today:
+        return
+    if db.sleep_state_get(cfg.database_path, _SS_LAST_NUDGE_DATE) == today:
+        log.info("sleep nudge: already fired today, skipping")
+        return
+
+    tc = time_ctx.now_context(
+        timezone=cfg.timezone,
+        weeknight_cutoff_hour=cfg.sleep_weeknight_hour,
+        weekend_cutoff_hour=cfg.sleep_weekend_hour,
+    )
+    if not tc.sleep_window_active:
+        # Cron fired but we're not actually past cutoff. Common at the
+        # boundary minute. Bail.
+        return
+
+    vibe_key = db.get_vibe(cfg.database_path, DEFAULT_VIBE)
+    msg = nudges.pick_sleep(vibe_key)
+
+    db.insert_message(cfg.database_path, local_date=today,
+                      role="system_nudge", vibe=vibe_key, content=msg)
+    db.sleep_state_set(cfg.database_path, _SS_LAST_NUDGE_DATE, today)
+    try:
+        await app.bot.send_message(chat_id=cfg.telegram_owner_id, text=msg)
+    except Exception:
+        log.exception("sleep nudge send failure")
 
 
 async def _run_body_check_poll(app: Application) -> None:
@@ -514,6 +699,9 @@ async def _job_nudge(ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def _job_weekly_weaver(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await _run_weekly_weaver(ctx.application, deliver=True)
 
+async def _job_sleep_nudge(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await _run_sleep_nudge(ctx.application)
+
 
 # ----------------------------- bootstrap -----------------------------
 
@@ -531,6 +719,7 @@ def build_app(cfg: Config) -> Application:
     app.add_handler(CommandHandler("weave_now", cmd_weave_now))
     app.add_handler(CommandHandler("week", cmd_week))
     app.add_handler(CommandHandler("check", cmd_check))
+    app.add_handler(CommandHandler("sleep", cmd_sleep))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(PollAnswerHandler(on_poll_answer))
@@ -554,6 +743,14 @@ def build_app(cfg: Config) -> Application:
         # is supposed to avoid.
         for h, m in [(11, 0), (17, 30)]:
             jq.run_daily(_job_nudge, time=dtime(hour=h, minute=m, tzinfo=tz))
+
+    if cfg.sleep_nudges_enabled:
+        # Sleep nudge: fires at the configured cutoff hour each night. The job
+        # itself decides whether to actually send (snooze flag, off-forever,
+        # already nudged today). One job per cutoff so weeknight + weekend
+        # both fire — the job re-checks which one is active before sending.
+        for hour in {cfg.sleep_weeknight_hour, cfg.sleep_weekend_hour}:
+            jq.run_daily(_job_sleep_nudge, time=dtime(hour=hour, minute=0, tzinfo=tz))
 
     return app
 

@@ -91,6 +91,12 @@ CREATE TABLE IF NOT EXISTS photo_observations (
     signals_json TEXT NOT NULL            -- structured signals extracted from the image
 );
 CREATE INDEX IF NOT EXISTS idx_photo_obs_local_date ON photo_observations(local_date);
+
+-- v3: sleep nudge state (snooze date, off-forever flag, last-nudged date)
+CREATE TABLE IF NOT EXISTS sleep_state (
+    k TEXT PRIMARY KEY,
+    v TEXT NOT NULL
+);
 """
 
 
@@ -143,6 +149,24 @@ def get_recent_messages(db_path: Path, limit: int = 20) -> list[sqlite3.Row]:
             (limit,),
         ).fetchall()
     return list(reversed(rows))
+
+
+def get_message_timing_window(
+    db_path: Path, *, limit: int = 50
+) -> list[dict[str, str]]:
+    """Recent (ts_utc, role) tuples for between-message awareness.
+
+    Includes 'system_nudge' rows on purpose so the persona can detect when its
+    own last outgoing message was an unprompted nudge (different from a reply).
+    Newest-first. The caller passes this to time_ctx.build_message_context.
+    """
+    with connect(db_path) as cx:
+        rows = cx.execute(
+            "SELECT ts_utc, role FROM messages "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"ts_utc": r["ts_utc"], "role": r["role"]} for r in rows]
 
 
 def get_user_voice_samples(
@@ -459,3 +483,25 @@ def get_photo_observations_for_date(db_path: Path, local_date: str) -> list[dict
          "signals": json.loads(r["signals_json"])}
         for r in rows
     ]
+
+
+# ---------- v3: sleep state ----------
+
+def sleep_state_get(db_path: Path, key: str, default: str | None = None) -> str | None:
+    with connect(db_path) as cx:
+        row = cx.execute("SELECT v FROM sleep_state WHERE k = ?", (key,)).fetchone()
+    return row["v"] if row else default
+
+
+def sleep_state_set(db_path: Path, key: str, value: str) -> None:
+    with connect(db_path) as cx:
+        cx.execute(
+            "INSERT INTO sleep_state (k,v) VALUES (?,?) "
+            "ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+            (key, value),
+        )
+
+
+def sleep_state_delete(db_path: Path, key: str) -> None:
+    with connect(db_path) as cx:
+        cx.execute("DELETE FROM sleep_state WHERE k = ?", (key,))

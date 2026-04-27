@@ -98,9 +98,14 @@ async def weave(
     merged_payload: dict[str, Any],
     local_date: str,
     voice_samples: list[str] | None = None,
+    rhythm_note: str | None = None,
 ) -> str:
     bundle = dict(merged_payload)
     bundle["voice_samples"] = voice_samples or []
+    if rhythm_note:
+        # Day-shape hint: '<concrete chunks>'. Weaver may use it to color
+        # the entry. Not a directive; just available context.
+        bundle["day_rhythm"] = rhythm_note
     user_msg = (
         f"Date: {local_date}\n"
         f"Day's signals (JSON):\n{json.dumps(bundle, ensure_ascii=False, indent=2)}\n\n"
@@ -173,10 +178,13 @@ async def weave_week(
     week_end_date: str,
     daily_entries: list[dict[str, Any]],
     voice_samples: list[str] | None = None,
+    late_night_dates: list[str] | None = None,
 ) -> str:
     """Generate a Sunday-night pattern-noticing paragraph.
 
     `daily_entries` is oldest-first list of {local_date, narrative, signals}.
+    `late_night_dates` is a hint about which days ran past midnight; the Weaver
+    is free to ignore it.
     Returns empty string if there isn't enough material to be honest about.
     """
     if not daily_entries:
@@ -186,6 +194,7 @@ async def weave_week(
         "week_end_date": week_end_date,
         "days": daily_entries,
         "voice_samples": voice_samples or [],
+        "late_night_dates": late_night_dates or [],
     }
     user_msg = (
         f"Week ending {week_end_date}.\n"

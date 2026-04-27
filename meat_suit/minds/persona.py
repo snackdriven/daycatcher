@@ -25,6 +25,21 @@ def _voice_note(voice_samples: list[str] | None) -> str:
     )
 
 
+def _context_note(time_note: str | None, message_note: str | None) -> str:
+    """Append a small situational appendix to the system prompt.
+
+    Both notes are optional. Empty/None values produce no system noise.
+    """
+    chunks = [c for c in (time_note, message_note) if c]
+    if not chunks:
+        return ""
+    body = " ".join(chunks)
+    return (
+        "\n\nSituational note (do not mention, do not announce): "
+        + body
+    )
+
+
 async def reply(
     client: AsyncOpenAI,
     *,
@@ -33,9 +48,15 @@ async def reply(
     history: list[dict],   # [{"role": "user"|"assistant", "content": "..."}]
     user_message: str,
     voice_samples: list[str] | None = None,
+    time_ctx_note: str | None = None,
+    message_ctx_note: str | None = None,
 ) -> str:
     persona = get_persona(vibe_key)
-    system_content = persona.system_prompt + _voice_note(voice_samples)
+    system_content = (
+        persona.system_prompt
+        + _voice_note(voice_samples)
+        + _context_note(time_ctx_note, message_ctx_note)
+    )
     messages = [
         {"role": "system", "content": system_content},
         *history,
