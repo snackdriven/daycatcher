@@ -1,0 +1,28 @@
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+
+# local data (NEVER commit chat exhaust or journals)
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite-journal
+
+# editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
