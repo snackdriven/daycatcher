@@ -450,39 +450,9 @@ def set_rabbit_hole_topic(db_path: Path, row_id: int, topic: str) -> None:
         cx.execute("UPDATE rabbit_holes SET topic = ? WHERE id = ?", (topic, row_id))
 
 
-# ---------- v2: photo observations ----------
-
-def insert_photo_observation(
-    db_path: Path,
-    *,
-    local_date: str,
-    file_id: str,
-    caption: str | None,
-    observation: str,
-    signals: dict[str, Any],
-) -> None:
-    with connect(db_path) as cx:
-        cx.execute(
-            "INSERT INTO photo_observations "
-            "(ts_utc, local_date, file_id, caption, observation, signals_json) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (_now_utc_iso(), local_date, file_id, caption, observation,
-             json.dumps(signals, ensure_ascii=False)),
-        )
-
-
-def get_photo_observations_for_date(db_path: Path, local_date: str) -> list[dict[str, Any]]:
-    with connect(db_path) as cx:
-        rows = cx.execute(
-            "SELECT caption, observation, signals_json FROM photo_observations "
-            "WHERE local_date = ? ORDER BY id ASC",
-            (local_date,),
-        ).fetchall()
-    return [
-        {"caption": r["caption"], "observation": r["observation"],
-         "signals": json.loads(r["signals_json"])}
-        for r in rows
-    ]
+# Note: the photo_observations table is left in the schema for back-compat with
+# existing databases written before Mind 4 (Eye) was removed. Old rows remain
+# queryable via raw SQL; nothing in the codebase reads or writes it now.
 
 
 # ---------- v3: sleep state ----------

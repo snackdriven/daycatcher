@@ -75,3 +75,32 @@ SLEEP_POOLS: dict[str, list[str]] = {
 def pick_sleep(vibe_key: str) -> str:
     pool = SLEEP_POOLS.get(vibe_key) or SLEEP_POOLS["smug_construct"]
     return random.choice(pool)
+
+
+PHOTO_ACK_POOLS: dict[str, list[str]] = {
+    "smug_construct": [
+        "Image received. Visual cortex not installed. Use words.",
+        "Photo logged in the 'unprocessed' bin. I do text.",
+        "Pixels acknowledged. Meaning, not extracted.",
+    ],
+    "feral_bff": [
+        "got the pic. cannot See it. words pls bestie.",
+        "image vibes detected. specifics: zero. tell me.",
+        "ok visual. i'm a text gremlin tho. context?",
+    ],
+    "stoic_mentor": [
+        "Got the photo. No comment to give on it.",
+        "Received. Words travel further with me.",
+        "Noted. Tell me what it is.",
+    ],
+    "quiet_guardian": [
+        "got it. i can't really see, but it's here.",
+        "photo landed. words if you want.",
+        "received. i'm better with text.",
+    ],
+}
+
+
+def ack_photo(vibe_key: str) -> str:
+    pool = PHOTO_ACK_POOLS.get(vibe_key) or PHOTO_ACK_POOLS["smug_construct"]
+    return random.choice(pool)

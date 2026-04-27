@@ -71,42 +71,6 @@ async def reply(
     return (resp.choices[0].message.content or "").strip()
 
 
-async def react_to_image(
-    client: AsyncOpenAI,
-    *,
-    model: str,
-    vibe_key: str,
-    neutral_observation: str,
-    user_caption: str | None,
-) -> str:
-    """Persona reacts to a photo. The vision step happens upstream; this layer
-    only sees a plain-English description and reacts as if it just saw the photo.
-    """
-    persona = get_persona(vibe_key)
-    # Frame the observation so the persona writes as if it saw the photo,
-    # NOT as if it received a report from a vision system.
-    cap = f' They captioned it: "{user_caption}".' if user_caption else ""
-    extra = (
-        f"The user just sent you a photo. What's in it: {neutral_observation}{cap}\n\n"
-        "React naturally, like a friend who just glanced at the picture they sent you. "
-        "1-3 short sentences in your voice. "
-        "Do NOT enumerate what's in the photo. Do NOT say 'I see' or 'I notice' "
-        "or 'logged' or 'noted' or 'acknowledged'. "
-        "Do NOT describe yourself reacting (no 'reacting:', no stage directions). "
-        "Just respond, the way a person would."
-    )
-    resp = await client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": persona.system_prompt},
-            {"role": "user", "content": extra},
-        ],
-        temperature=0.9,
-        max_tokens=200,
-    )
-    return (resp.choices[0].message.content or "").strip()
-
-
 async def react_to_rabbit_hole(
     client: AsyncOpenAI,
     *,

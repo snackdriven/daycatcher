@@ -2,7 +2,7 @@
 
 Browser companion for the [Meat-Suit](../) telegram bot. Ports **Mind 1** (the persona) into a web app so you can try the chat side without setting up a bot, an OpenAI key, or a cron job.
 
-The scribe (Mind 2), weaver (Mind 3), and eye (Mind 4) only live in the python version. They need a long-running cron, a personal Telegram chat, and a stable home folder. The web version is just the part you talk to.
+The scribe (Mind 2) and weaver (Mind 3) only live in the python version. They need a long-running cron, a personal Telegram chat, and a stable home folder. The web version is just the part you talk to.
 
 ## what's here
 

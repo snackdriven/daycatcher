@@ -4,7 +4,7 @@ You are going to text a smug AI for two weeks and at the end of it your phone wi
 
 That's the whole pitch.
 
-It's a Telegram bot. You banter with a persona. A second mind quietly extracts signal from the chat exhaust. A third mind runs at 11:59 PM and ghostwrites the day. A fourth looks at any photos you send and turns them into structured observations. None of them know the others exist.
+It's a Telegram bot. You banter with a persona. A second mind quietly extracts signal from the chat exhaust. A third mind runs at 11:59 PM and ghostwrites the day. None of them know the others exist.
 
 It's for anyone who has tried to keep a journal and bounced off it because the act of being asked to journal makes you stop wanting to.
 
@@ -12,16 +12,15 @@ There's also a [browser companion](./web/) if you want to try the chat side with
 
 ---
 
-## The four minds
+## The three minds
 
 | | Mind | Job | Sees |
 |---|---|---|---|
 | 1 | **Persona** | Banters with you in Telegram | the last 20 messages, nothing else |
 | 2 | **Scribe** | Extracts JSON from chat exhaust | raw transcripts only |
 | 3 | **Weaver** | Writes the daily journal at 23:59 | the day's structured bundle |
-| 4 | **Eye** | Photo to data | one photo at a time |
 
-The Persona has zero awareness of the journal. That is the entire architectural point. You stay relaxed because you're not writing for posterity. You're just talking, tapping, and snapping. The thing that writes things down has never met you and never will.
+The Persona has zero awareness of the journal. That is the entire architectural point. You stay relaxed because you're not writing for posterity. You're just talking and tapping. The thing that writes things down has never met you and never will.
 
 ---
 
@@ -29,7 +28,7 @@ The Persona has zero awareness of the journal. That is the entire architectural 
 
 **Tap.** A persistent keyboard sits under the text input with four buttons: `Overwhelmed`, `Non-Verbal`, `Safe Food Only`, `Brain Fog`. One tap logs a status event and gets one in-character reply. Smug Construct will say *"Logged: meat-sack at capacity. Reducing chatter overhead."* Quiet Guardian will say *"mm. i'll be quiet. nothing required."* No follow-up question. No "tell me more." That is the whole interaction.
 
-**Snap.** Send a photo of anything. Desk, food, sky, cat, the inside of your fridge at 2 AM. The Eye writes a neutral observation and produces structured signals (clutter level, food state, caffeine vessels visible, executive-function proxy). The Persona reacts to the *observation* in character. It never sees the structured data. The Weaver folds the signals into the night's entry as concrete sensory detail.
+If you send a photo, the bot drops a short in-vibe ack and moves on. No vision pass, no storage, nothing piped to the journal. Use words.
 
 **Paste.** Drop a URL or open a message with `fun fact` or `til` and it gets logged as a curiosity event. The Weaver treats these as legitimate micro-gratitudes worth writing about. *"I spent some time looking into 18th-century clockmaking. It was a nice break from the office noise."*
 
@@ -123,9 +122,7 @@ Everything lives in `./data/meatsuit.db`. Local SQLite, eight tables, no cloud a
 
 The bot only responds to your `TELEGRAM_OWNER_ID`. Anyone else is silently ignored, including in groups.
 
-Photos are processed through OpenAI vision. Raw image bytes are not stored locally. Telegram's `file_id` is kept for re-fetch, plus the neutral observation and the structured signals.
-
-The Persona only ever sees the rolling 20-message chat window. It never reads journals, signals, photos, or polls. That part is on purpose.
+The Persona only ever sees the rolling 20-message chat window. It never reads journals, signals, or polls. That part is on purpose.
 
 ---
 
@@ -154,14 +151,13 @@ meat_suit/
 │   ├── nudges.py          # bait pools per persona
 │   ├── low_spoon.py       # button menu + per-persona acks
 │   ├── body_check.py      # /check poll definition
-│   ├── bot.py             # telegram handlers, jobqueue, vision pipeline
+│   ├── bot.py             # telegram handlers, jobqueue
 │   ├── personas/
 │   │   └── catalog.py     # 4 personas as system prompts
 │   └── minds/
-│       ├── persona.py     # mind 1, chat + image-react + rabbit-hole-react
+│       ├── persona.py     # mind 1, chat + rabbit-hole-react
 │       ├── scribe.py      # mind 2, json extraction
-│       ├── weaver.py      # mind 3, multi-source midnight ghostwriter
-│       └── eye.py         # mind 4, photo to data
+│       └── weaver.py      # mind 3, multi-source midnight ghostwriter
 └── web/                   # browser companion (mind 1 only)
     ├── client/            # react frontend
     ├── server/            # express + sqlite + persona prompts

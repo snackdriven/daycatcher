@@ -5,7 +5,6 @@ import asyncio
 import logging
 import re
 from datetime import datetime, time as dtime, timedelta, timezone as _tz
-from io import BytesIO
 from zoneinfo import ZoneInfo
 
 from openai import AsyncOpenAI
@@ -28,7 +27,6 @@ from telegram.ext import (
 
 from . import body_check, db, low_spoon, nudges, time_ctx
 from .config import Config, load_config
-from .minds import eye as mind4
 from .minds import persona as mind1
 from .minds import scribe as mind2
 from .minds import weaver as mind3
@@ -41,7 +39,6 @@ URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 # Input caps. The user is the only one talking to the bot, but defensive
 # programming still beats blowing up on a giant paste or a 50MB photo.
 MAX_TEXT_CHARS = 8000          # ~2000 tokens; enough for any human paste
-MAX_PHOTO_BYTES = 12 * 1024 * 1024  # 12 MB; Telegram caps photos at 10MB anyway
 
 # Sleep-state keys used in the sleep_state k/v table.
 _SS_OFF_FOREVER = "off_forever"
@@ -386,73 +383,16 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Photo handler: silent acknowledgment only. We don't run vision, store
+    photos, or feed them to the Scribe/Weaver. Just a short in-vibe reply so
+    the chat doesn't go dead when the user sends an image.
+    """
     cfg: Config = ctx.application.bot_data["cfg"]
-    client: AsyncOpenAI = ctx.application.bot_data["openai"]
     if not _is_owner(cfg, update) or not update.message or not update.message.photo:
         return
-
-    local_date = _today_local(cfg)
     vibe_key = db.get_vibe(cfg.database_path, DEFAULT_VIBE)
-
-    # Best-quality photo
-    photo = update.message.photo[-1]
-    caption = (update.message.caption or "").strip() or None
-    if caption and len(caption) > MAX_TEXT_CHARS:
-        caption = caption[:MAX_TEXT_CHARS] + "…[trimmed]"
-
-    await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    try:
-        f = await ctx.bot.get_file(photo.file_id)
-        buf = BytesIO()
-        await f.download_to_memory(buf)
-        image_bytes = buf.getvalue()
-    except Exception:
-        log.exception("photo download failed")
-        await update.message.reply_text("the image didn't come through. send it again?")
-        return
-
-    # Photo size cap. Telegram itself caps at ~10MB but defensive bound here.
-    if len(image_bytes) > MAX_PHOTO_BYTES:
-        log.warning("photo rejected: %d bytes exceeds cap", len(image_bytes))
-        await update.message.reply_text(
-            "that one's too big. try a smaller version?"
-        )
-        return
-
-    # Mind 4: neutral observation + structured signals
-    try:
-        eye = await mind4.see(client, model=cfg.mind3_model, image_bytes=image_bytes, caption=caption)
-    except Exception:
-        log.exception("Mind 4 failure")
-        eye = {"observation": "(image received, vision unavailable)", "signals": {}}
-
-    db.insert_photo_observation(
-        cfg.database_path,
-        local_date=local_date,
-        file_id=photo.file_id,
-        caption=caption,
-        observation=eye["observation"],
-        signals=eye.get("signals", {}),
-    )
-
-    # Mind 1: react in-character
-    try:
-        reply = await mind1.react_to_image(
-            client, model=cfg.mind1_model, vibe_key=vibe_key,
-            neutral_observation=eye["observation"], user_caption=caption,
-        )
-    except Exception:
-        log.exception("persona image reaction failed")
-        reply = "yeah."
-
-    # Stream into messages so the Scribe gets context too. We use the user's
-    # caption verbatim if they wrote one; otherwise a soft note that they sent
-    # a photo (no [brackets], no [tags], so the chat reads like a chat).
-    user_log = caption if caption else "(sent a photo)"
-    db.insert_message(cfg.database_path, local_date=local_date,
-                      role="user", vibe=vibe_key, content=user_log)
-    db.insert_message(cfg.database_path, local_date=local_date,
-                      role="assistant", vibe=vibe_key, content=reply)
+    reply = nudges.ack_photo(vibe_key)
+    log.info("photo received, ack-only (vibe=%s)", vibe_key)
     await update.message.reply_text(reply)
 
 
@@ -510,7 +450,6 @@ async def _run_weaver(app: Application) -> None:
     chat_signals = mind2.merge_payloads(db.get_extractions_for_date(cfg.database_path, local_date))
     status_taps = db.get_status_events_for_date(cfg.database_path, local_date)
     polls = db.get_polls_for_date(cfg.database_path, local_date)
-    photos = db.get_photo_observations_for_date(cfg.database_path, local_date)
     rabbits = db.get_rabbit_holes_for_date(cfg.database_path, local_date)
 
     has_any_signal = (
@@ -518,7 +457,7 @@ async def _run_weaver(app: Application) -> None:
         chat_signals.get("mental_weather") or
         any(v.get("status", "unknown") != "unknown"
             for v in chat_signals.get("meat_suit_maintenance", {}).values()) or
-        status_taps or polls or photos or rabbits
+        status_taps or polls or rabbits
     )
     if not has_any_signal:
         log.info("weaver: no signals for %s, skipping", local_date)
@@ -528,7 +467,6 @@ async def _run_weaver(app: Application) -> None:
         "chat_signals": chat_signals,
         "status_taps": status_taps,
         "body_check_poll": polls[-1] if polls else None,
-        "photo_observations": photos,
         "rabbit_holes": rabbits,
     }
     voice_samples = db.get_user_voice_samples(cfg.database_path, limit=12)
