@@ -23,7 +23,7 @@ const PERSONAS = [
   {
     key: "stoic_mentor",
     name: "The Stoic Mentor",
-    tag: "the system, not the symptom",
+    tag: "masking fatigue is structural",
     sample:
       "Long day. The mask was heavy. Body's been quiet today. Glass of water sits well in this kind of weather.",
     vibeVar: "--vibe-stoic",
@@ -72,9 +72,8 @@ export default function Landing() {
             </h1>
             <p className="mt-7 text-lg text-foreground/80 max-w-[40ch] leading-relaxed">
               meat-suit is a small chat companion for AuDHD, alexithymia, and
-              PDA brains. it doesn't nag. it doesn't log streaks. it sits next
-              to you while you spiral, and notices when your body is running on
-              fumes.
+              PDA brains. no streaks, no nagging. it sits next to you while you
+              spiral, and notices when your body is running on fumes.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
@@ -97,7 +96,7 @@ export default function Landing() {
               </a>
             </div>
             <p className="mt-5 text-xs text-muted-foreground hand text-base">
-              a thing you talk to, not an app you owe.
+              a thing you can just talk to.
             </p>
           </div>
 
@@ -129,8 +128,8 @@ export default function Landing() {
               </li>
               <li>
                 <strong className="font-semibold">mind 4.</strong> the mirror.
-                learns how you talk so the others sound less like a chatbot
-                and more like someone who knows you.
+                learns how you talk, so the others start to sound like
+                someone who knows you.
               </li>
             </ul>
             <p className="mt-5 text-xs text-muted-foreground">
@@ -300,8 +299,7 @@ export default function Landing() {
                   <p className="font-medium">the mirror</p>
                   <p className="text-muted-foreground mt-0.5 leading-snug">
                     picks up your phrasing over time. feeds it back so the
-                    others sound less like a bot and more like someone who's
-                    been listening.
+                    others start sounding like someone who's been listening.
                   </p>
                 </div>
               </li>
@@ -407,8 +405,7 @@ export default function Landing() {
             <h3 className="font-serif text-2xl mt-2">fixated on something? say so.</h3>
             <p className="mt-3 text-sm text-foreground/80 leading-relaxed">
               hyperfixations get a topic field. the weaver sees them as a
-              cluster, not noise. your special interests are data, not
-              symptoms.
+              cluster instead of noise. your special interests are signal here.
             </p>
           </div>
 
@@ -417,8 +414,8 @@ export default function Landing() {
             <h3 className="font-serif text-3xl mt-2">sunday, 10pm. one observation.</h3>
             <p className="mt-3 text-foreground/80 leading-relaxed">
               the weaver reads your week and writes back one paragraph in your
-              own phrasing. not a report. not a streak. just "hey, did you
-              notice this?" and then it goes back to being quiet.
+              own phrasing. no report, no streak. just "hey, did you notice
+              this?" and then it goes back to being quiet.
             </p>
           </div>
 
@@ -431,8 +428,8 @@ export default function Landing() {
             <p className="mt-3 text-foreground/80 leading-relaxed max-w-[60ch]">
               the mirror picks up your phrasing, your cadence, the words you
               actually use, and feeds them back into the persona. the longer
-              it sits with you, the less it sounds like a chatbot. it starts
-              to sound like a friend who's been listening.
+              it sits with you, the more it starts to sound like a friend
+              who's been listening.
             </p>
           </div>
         </div>
@@ -454,17 +451,19 @@ export default function Landing() {
               </p>
             </li>
             <li>
-              <p className="font-medium">no streaks. no leaderboards. no shame.</p>
+              <p className="font-medium">no streaks. no leaderboards.</p>
               <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
                 missing a day is fine. missing a month is fine. the suit
                 doesn't keep score. it just picks up where you left off.
               </p>
             </li>
             <li>
-              <p className="font-medium">the persona never sees the journal.</p>
+              <p className="font-medium">the persona never reads the journal.</p>
               <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                mind 1 doesn't know mind 2 exists. so it can't accidentally
-                weaponize what you said yesterday against you today.
+                mind 1 sees the chat you're already in. that's continuity.
+                what it can't see is the structured stuff the scribe wrote
+                down, so the journal never quietly becomes a script the
+                chatbot reads from.
               </p>
             </li>
           </ul>
@@ -481,9 +480,8 @@ export default function Landing() {
           come talk to one.
         </h2>
         <p className="mt-5 text-foreground/80 max-w-[44ch] mx-auto">
-          the demo lives in your browser. nothing leaves until you send a
-          message, and even then, it's just to the model and back. no
-          accounts. no pressure.
+          your messages go to the model and come back. that's it. no accounts.
+          no follow-up email begging you to come back.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link

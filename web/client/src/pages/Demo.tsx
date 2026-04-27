@@ -132,8 +132,8 @@ export default function Demo() {
         <p className="mt-4 text-foreground/80 leading-relaxed">
           this is just mind 1, the persona. the scribe and the weaver live in
           the python version. switching vibes keeps each conversation alive.
-          your messages are stored in this app's own database, not your
-          browser, so a refresh won't lose them.
+          your messages are stored on the server side per persona, so a
+          refresh won't lose them.
         </p>
       </div>
 
@@ -330,8 +330,8 @@ function EmptyState({ personaKey, sample }: { personaKey: PersonaKey; sample?: s
       />
       <p className="hand text-2xl text-foreground">they're here.</p>
       <p className="text-sm text-muted-foreground mt-2 max-w-xs">
-        say anything. a fragment, a vent, the smallest thought. there's no
-        wrong opener.
+        say anything. a fragment is fine. a vent is fine. there's no wrong
+        opener.
       </p>
       {sample && (
         <p

@@ -64,7 +64,7 @@ export function Layout({ children }: { children: ReactNode }) {
             </p>
           </div>
           <div className="text-xs text-muted-foreground space-y-1 sm:text-right">
-            <p>built with care, not metrics.</p>
+            <p>built slow. built quiet.</p>
             <p>
               <a
                 href="https://github.com/snackdriven/meat-suit"
