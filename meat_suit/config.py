@@ -38,7 +38,8 @@ def _int_in_range(name: str, default: int, lo: int, hi: int) -> int:
 class Config:
     telegram_token: str
     telegram_owner_id: int
-    openai_api_key: str
+    llm_api_key: str
+    llm_base_url: str
     mind1_model: str
     mind2_model: str
     mind3_model: str
@@ -64,13 +65,27 @@ def load_config() -> Config:
             f"Use e.g. 'America/Chicago', 'Europe/London', 'Asia/Tokyo'."
         ) from exc
 
+    # LLM_API_KEY is the canonical name. OPENAI_API_KEY is accepted as fallback
+    # so existing .env files keep working without an immediate rewrite.
+    llm_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not llm_key:
+        raise RuntimeError(
+            "Missing required env var: LLM_API_KEY. "
+            "Get one free from https://aistudio.google.com/apikey , "
+            "or use any OpenAI-compatible provider with LLM_BASE_URL."
+        )
+
     return Config(
         telegram_token=_required("TELEGRAM_BOT_TOKEN"),
         telegram_owner_id=int(_required("TELEGRAM_OWNER_ID")),
-        openai_api_key=_required("OPENAI_API_KEY"),
-        mind1_model=os.getenv("MIND1_PERSONA_MODEL", "gpt-4o-mini"),
-        mind2_model=os.getenv("MIND2_SCRIBE_MODEL", "gpt-4o-mini"),
-        mind3_model=os.getenv("MIND3_WEAVER_MODEL", "gpt-4o"),
+        llm_api_key=llm_key,
+        llm_base_url=os.getenv(
+            "LLM_BASE_URL",
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
+        ),
+        mind1_model=os.getenv("MIND1_PERSONA_MODEL", "gemini-2.0-flash"),
+        mind2_model=os.getenv("MIND2_SCRIBE_MODEL", "gemini-2.0-flash"),
+        mind3_model=os.getenv("MIND3_WEAVER_MODEL", "gemini-2.0-flash"),
         database_path=db_path,
         timezone=timezone,
         nudges_enabled=os.getenv("NUDGES_ENABLED", "1") == "1",

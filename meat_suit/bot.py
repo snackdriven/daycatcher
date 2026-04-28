@@ -716,7 +716,13 @@ def build_app(cfg: Config) -> Application:
 
     app = Application.builder().token(cfg.telegram_token).build()
     app.bot_data["cfg"] = cfg
-    app.bot_data["openai"] = AsyncOpenAI(api_key=cfg.openai_api_key)
+    # The OpenAI Python SDK is used as the client, but the base_url and key can
+    # point at any OpenAI-compatible provider. Default is Gemini's free-tier
+    # endpoint; flip LLM_BASE_URL + LLM_API_KEY for OpenAI, Groq, OpenRouter, etc.
+    app.bot_data["openai"] = AsyncOpenAI(
+        api_key=cfg.llm_api_key,
+        base_url=cfg.llm_base_url,
+    )
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("menu", cmd_menu))
