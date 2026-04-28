@@ -89,6 +89,7 @@ Three secrets:
 - `/week` — generate or re-show the weekly look-back
 - `/check` — fire the body-check poll on demand
 - `/weave_now` — run the Scribe and Weaver on today's chat (useful for testing)
+- `/data` — show the Scribe's structured extraction (today, `yesterday`, or `week`)
 - `/sleep` — view or change sleep-nudge settings (`on` / `off` / `off forever`)
 
 ## Schedule (in your timezone)

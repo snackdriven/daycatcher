@@ -194,6 +194,73 @@ async def cmd_check(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await _run_body_check_poll(ctx.application)
 
 
+async def cmd_data(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show the Scribe's structured extraction. Voice-neutral, read-only.
+
+    /data            → today's merged extraction
+    /data yesterday  → yesterday's
+    /data week       → last 7 days, one capsule per day
+    """
+    cfg: Config = ctx.application.bot_data["cfg"]
+    if not _is_owner(cfg, update) or not update.message:
+        return
+    tz = ZoneInfo(cfg.timezone)
+    today = datetime.now(tz).date()
+    args = (ctx.args or [])
+    arg = (args[0].strip().lower() if args else "")
+
+    def _merged_for(date_str: str) -> dict[str, object]:
+        rows = db.get_extractions_for_date(cfg.database_path, date_str)
+        return mind2.merge_payloads(rows)
+
+    if arg in ("", "today"):
+        date_str = today.strftime("%Y-%m-%d")
+        merged = _merged_for(date_str)
+        body = mind2.format_extraction(merged)
+        if not body:
+            await update.message.reply_text(f"nothing extracted yet for {date_str}.")
+            return
+        await update.message.reply_text(f"{date_str}\n\n{body}")
+        return
+
+    if arg == "yesterday":
+        date_str = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        merged = _merged_for(date_str)
+        body = mind2.format_extraction(merged)
+        if not body:
+            await update.message.reply_text(f"nothing extracted for {date_str}.")
+            return
+        await update.message.reply_text(f"{date_str}\n\n{body}")
+        return
+
+    if arg == "week":
+        capsules: list[str] = []
+        for offset in range(6, -1, -1):
+            d = today - timedelta(days=offset)
+            date_str = d.strftime("%Y-%m-%d")
+            merged = _merged_for(date_str)
+            body = mind2.format_extraction(merged)
+            if not body:
+                continue
+            capsules.append(f"{date_str}\n{body}")
+        if not capsules:
+            await update.message.reply_text("nothing extracted in the last 7 days.")
+            return
+        # Telegram has a 4096-char message cap. If the joined output exceeds
+        # the safe limit, send each day in its own message.
+        joined = "\n\n".join(capsules)
+        if len(joined) <= 3800:
+            await update.message.reply_text(joined)
+            return
+        for cap in capsules:
+            await update.message.reply_text(cap)
+        return
+
+    await update.message.reply_text(
+        "usage: /data | /data yesterday | /data week"
+    )
+
+
 async def cmd_sleep(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Tell the bot what to do about its sleep nudge.
 
@@ -657,6 +724,7 @@ def build_app(cfg: Config) -> Application:
     app.add_handler(CommandHandler("weave_now", cmd_weave_now))
     app.add_handler(CommandHandler("week", cmd_week))
     app.add_handler(CommandHandler("check", cmd_check))
+    app.add_handler(CommandHandler("data", cmd_data))
     app.add_handler(CommandHandler("sleep", cmd_sleep))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))

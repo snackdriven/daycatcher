@@ -188,3 +188,92 @@ def merge_payloads(payloads: list[dict[str, Any]]) -> dict[str, Any]:
     seen: set[str] = set()
     merged["gratitudes"] = [g for g in grats if not (g.lower() in seen or seen.add(g.lower()))]
     return merged
+
+
+def _format_status_line(label: str, entry: dict[str, Any]) -> str | None:
+    """Format one status field (hydration/hunger/bathroom/work_drain/etc) if it
+    has signal. Returns None for unknown/empty so callers can filter.
+    """
+    if not isinstance(entry, dict):
+        return None
+    state = entry.get("status") or entry.get("level") or entry.get("state")
+    if not state or state == "unknown":
+        return None
+    evidence = entry.get("evidence") or entry.get("quote")
+    if evidence:
+        return f"  · {label}: {state} — {evidence}"
+    return f"  · {label}: {state}"
+
+
+def has_signal(merged: dict[str, Any]) -> bool:
+    """True if a merged payload has any non-empty bucket worth showing."""
+    ms = merged.get("meat_suit_maintenance", {})
+    sl = merged.get("spoon_ledger", {})
+    for k in ("hydration", "hunger", "bathroom"):
+        v = ms.get(k) or {}
+        if (v.get("status") or "unknown") != "unknown":
+            return True
+    for k in ("work_drain", "social_battery", "executive_function"):
+        v = sl.get(k) or {}
+        if (v.get("level") or v.get("state") or "unknown") != "unknown":
+            return True
+    if merged.get("mental_weather"):
+        return True
+    if merged.get("gratitudes"):
+        return True
+    return False
+
+
+def format_extraction(merged: dict[str, Any]) -> str:
+    """Format a merged Scribe payload as a readable plain-text block. Voice-neutral.
+    Returns an empty string if there's nothing to show; callers decide what to do.
+    """
+    if not has_signal(merged):
+        return ""
+
+    lines: list[str] = []
+
+    ms = merged.get("meat_suit_maintenance", {})
+    body_lines = [
+        line for line in (
+            _format_status_line("hydration", ms.get("hydration") or {}),
+            _format_status_line("hunger", ms.get("hunger") or {}),
+            _format_status_line("bathroom", ms.get("bathroom") or {}),
+        )
+        if line
+    ]
+    if body_lines:
+        lines.append("body:")
+        lines.extend(body_lines)
+
+    sl = merged.get("spoon_ledger", {})
+    spoons_lines = [
+        line for line in (
+            _format_status_line("work drain", sl.get("work_drain") or {}),
+            _format_status_line("social battery", sl.get("social_battery") or {}),
+            _format_status_line("executive function", sl.get("executive_function") or {}),
+        )
+        if line
+    ]
+    if spoons_lines:
+        if lines:
+            lines.append("")
+        lines.append("spoons:")
+        lines.extend(spoons_lines)
+
+    weather = merged.get("mental_weather")
+    if weather:
+        if lines:
+            lines.append("")
+        lines.append("mental weather:")
+        lines.append(f"  · {weather}")
+
+    grats = merged.get("gratitudes") or []
+    if grats:
+        if lines:
+            lines.append("")
+        lines.append("gratitudes:")
+        for g in grats:
+            lines.append(f"  · {g}")
+
+    return "\n".join(lines)
