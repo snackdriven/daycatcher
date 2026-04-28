@@ -68,7 +68,7 @@ cd meat_suit
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# fill in TELEGRAM_BOT_TOKEN, TELEGRAM_OWNER_ID, OPENAI_API_KEY
+# fill in TELEGRAM_BOT_TOKEN, TELEGRAM_OWNER_ID, LLM_API_KEY
 python run.py
 ```
 
@@ -76,7 +76,9 @@ Three secrets:
 
 1. **TELEGRAM_BOT_TOKEN** from `@BotFather` → `/newbot` → copy the token.
 2. **TELEGRAM_OWNER_ID** from `@userinfobot`. This locks the bot to only you. Anyone else who finds it is silently ignored.
-3. **OPENAI_API_KEY** from <https://platform.openai.com/api-keys>.
+3. **LLM_API_KEY**. Default config uses Gemini's free tier — grab one at <https://aistudio.google.com/apikey> with a Google account, no card required. Plenty for one-user daily use (1500 req/day on Flash).
+
+Want to use OpenAI, Groq, or OpenRouter instead? Same SDK, different base URL. Set `LLM_BASE_URL` and the model names in `.env`. Examples are commented in `.env.example`.
 
 ---
 
@@ -135,7 +137,7 @@ The Persona only ever sees the rolling 20-message chat window. It never reads jo
 cd web && npm install && npm run dev
 ```
 
-Stack: Express + Vite + React + Tailwind + SQLite + OpenAI Responses API.
+Stack: Express + Vite + React + Tailwind + SQLite, talking to any OpenAI-compatible Chat Completions endpoint (defaults to Gemini's free tier, like the python side).
 
 ---
 
@@ -146,9 +148,12 @@ meat_suit/
 ├── run.py
 ├── requirements.txt
 ├── .env.example
+├── scripts/
+│   └── check_llm.py       # one-shot probe: does the LLM endpoint reply?
 ├── meat_suit/             # the python bot
 │   ├── config.py          # env loader
 │   ├── db.py              # sqlite, 8 tables
+│   ├── time_ctx.py        # time + message-context notes for persona/weaver
 │   ├── nudges.py          # bait pools per persona
 │   ├── low_spoon.py       # button menu + per-persona acks
 │   ├── body_check.py      # /check poll definition

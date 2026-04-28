@@ -97,11 +97,46 @@ CREATE TABLE IF NOT EXISTS sleep_state (
     k TEXT PRIMARY KEY,
     v TEXT NOT NULL
 );
+
+-- v4 (web): track which journal entries the user has seen, for the nav unread dot.
+CREATE TABLE IF NOT EXISTS journal_seen (
+    local_date TEXT PRIMARY KEY,        -- references journal_entries.local_date
+    seen_at    TEXT NOT NULL
+);
+
+-- v4 (web): web-app-only key/value prefs (theme, sidebar collapsed, first-run-done, etc).
+CREATE TABLE IF NOT EXISTS web_prefs (
+    k TEXT PRIMARY KEY,
+    v TEXT NOT NULL
+);
+
+-- v5 (web): single-row passcode auth. Replaces the env-var URL key.
+CREATE TABLE IF NOT EXISTS auth (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    passcode_hash   TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until    TEXT
+);
 """
+
+
+def _apply_pragmas(cx: sqlite3.Connection) -> None:
+    """Pragmas that make concurrent access from web + optional TG bot safe.
+
+    WAL lets multiple readers run while one writer is active; without it the
+    second process gets SQLITE_BUSY on any write contention. busy_timeout makes
+    contended writes wait briefly instead of erroring out.
+    """
+    cx.execute("PRAGMA journal_mode=WAL")
+    cx.execute("PRAGMA synchronous=NORMAL")
+    cx.execute("PRAGMA busy_timeout=5000")
+    cx.execute("PRAGMA foreign_keys=ON")
 
 
 def init_db(path: Path) -> None:
     with sqlite3.connect(path) as cx:
+        _apply_pragmas(cx)
         cx.executescript(SCHEMA)
         cx.commit()
 
@@ -110,6 +145,7 @@ def init_db(path: Path) -> None:
 def connect(path: Path) -> Iterator[sqlite3.Connection]:
     cx = sqlite3.connect(path)
     cx.row_factory = sqlite3.Row
+    _apply_pragmas(cx)
     try:
         yield cx
         cx.commit()
@@ -475,3 +511,320 @@ def sleep_state_set(db_path: Path, key: str, value: str) -> None:
 def sleep_state_delete(db_path: Path, key: str) -> None:
     with connect(db_path) as cx:
         cx.execute("DELETE FROM sleep_state WHERE k = ?", (key,))
+
+
+# ---------- web-specific helpers ----------
+
+
+def web_pref_get(db_path: Path, key: str, default: str | None = None) -> str | None:
+    with connect(db_path) as cx:
+        row = cx.execute("SELECT v FROM web_prefs WHERE k = ?", (key,)).fetchone()
+    return row["v"] if row else default
+
+
+def web_pref_set(db_path: Path, key: str, value: str) -> None:
+    with connect(db_path) as cx:
+        cx.execute(
+            "INSERT INTO web_prefs (k,v) VALUES (?,?) "
+            "ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+            (key, value),
+        )
+
+
+def mark_journal_seen(db_path: Path, local_date: str) -> None:
+    """Mark a journal entry as seen by the user (clears the unread dot)."""
+    with connect(db_path) as cx:
+        cx.execute(
+            "INSERT INTO journal_seen (local_date, seen_at) VALUES (?,?) "
+            "ON CONFLICT(local_date) DO NOTHING",
+            (local_date, _now_utc_iso()),
+        )
+
+
+def journal_unread_count(db_path: Path) -> int:
+    """How many journal entries exist that haven't been marked seen."""
+    with connect(db_path) as cx:
+        row = cx.execute(
+            "SELECT COUNT(*) AS n FROM journal_entries je "
+            "LEFT JOIN journal_seen js USING (local_date) "
+            "WHERE js.local_date IS NULL"
+        ).fetchone()
+    return int(row["n"]) if row else 0
+
+
+def list_journal_entries(
+    db_path: Path, *, limit: int = 30, before_date: str | None = None
+) -> list[dict[str, Any]]:
+    """Return journal entries newest-first, each tagged with whether seen."""
+    with connect(db_path) as cx:
+        if before_date:
+            rows = cx.execute(
+                "SELECT je.local_date, je.ts_utc, je.narrative, "
+                "       js.seen_at IS NOT NULL AS seen "
+                "FROM journal_entries je "
+                "LEFT JOIN journal_seen js USING (local_date) "
+                "WHERE je.local_date < ? AND je.local_date NOT LIKE 'week:%' "
+                "ORDER BY je.local_date DESC LIMIT ?",
+                (before_date, limit),
+            ).fetchall()
+        else:
+            rows = cx.execute(
+                "SELECT je.local_date, je.ts_utc, je.narrative, "
+                "       js.seen_at IS NOT NULL AS seen "
+                "FROM journal_entries je "
+                "LEFT JOIN journal_seen js USING (local_date) "
+                "WHERE je.local_date NOT LIKE 'week:%' "
+                "ORDER BY je.local_date DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    return [
+        {
+            "local_date": r["local_date"],
+            "ts_utc": r["ts_utc"],
+            "narrative": r["narrative"],
+            "seen": bool(r["seen"]),
+            "kind": "daily",
+        }
+        for r in rows
+    ]
+
+
+def list_weekly_reflections(
+    db_path: Path, *, limit: int = 12
+) -> list[dict[str, Any]]:
+    """Weekly reflections live in journal_entries with a synthetic 'week:YYYY-MM-DD' key.
+
+    Strip the prefix on the way out. Seen state is tracked the same way daily
+    entries are: a row in journal_seen keyed by the synthetic local_date.
+    """
+    with connect(db_path) as cx:
+        rows = cx.execute(
+            "SELECT je.local_date, je.ts_utc, je.narrative, "
+            "       js.seen_at IS NOT NULL AS seen "
+            "FROM journal_entries je "
+            "LEFT JOIN journal_seen js USING (local_date) "
+            "WHERE je.local_date LIKE 'week:%' "
+            "ORDER BY je.local_date DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [
+        {
+            "local_date": r["local_date"].removeprefix("week:"),
+            "ts_utc": r["ts_utc"],
+            "narrative": r["narrative"],
+            "seen": bool(r["seen"]),
+            "kind": "weekly",
+        }
+        for r in rows
+    ]
+
+
+def get_messages_since_id(
+    db_path: Path, *, since_id: int = 0, limit: int = 200
+) -> list[dict[str, Any]]:
+    """Pull messages with id > since_id, newest-last (chat order).
+
+    `since_id=0` returns the most recent `limit` messages in chat order.
+    Includes user, assistant, and system_nudge rows (the chat stream surfaces
+    Scribe nudges per spec §6).
+    """
+    with connect(db_path) as cx:
+        if since_id > 0:
+            rows = cx.execute(
+                "SELECT id, ts_utc, role, vibe, content FROM messages "
+                "WHERE id > ? AND role IN ('user', 'assistant', 'system_nudge') "
+                "ORDER BY id ASC LIMIT ?",
+                (since_id, limit),
+            ).fetchall()
+        else:
+            # Return the last `limit` messages, in chronological order
+            rows = cx.execute(
+                "SELECT id, ts_utc, role, vibe, content FROM ("
+                "  SELECT id, ts_utc, role, vibe, content FROM messages "
+                "  WHERE role IN ('user', 'assistant', 'system_nudge') "
+                "  ORDER BY id DESC LIMIT ?"
+                ") ORDER BY id ASC",
+                (limit,),
+            ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "ts_utc": r["ts_utc"],
+            "role": r["role"],
+            "vibe": r["vibe"],
+            "content": r["content"],
+        }
+        for r in rows
+    ]
+
+
+def get_message_history_for_persona(
+    db_path: Path, *, limit: int = 20
+) -> list[dict[str, str]]:
+    """Format the last `limit` user/assistant messages for the Persona's chat history.
+
+    Returns OpenAI-style role/content pairs, oldest-first.
+    """
+    rows = get_messages_since_id(db_path, since_id=0, limit=limit)
+    return [{"role": r["role"], "content": r["content"]} for r in rows]
+
+
+# ---------- dashboard aggregations ----------
+
+
+def dashboard_message_counts(
+    db_path: Path, *, end_date: str, days: int
+) -> list[dict[str, Any]]:
+    """Daily user-message counts ending at end_date, oldest-first.
+
+    Used both for the sparkline and the streak calculation.
+    """
+    with connect(db_path) as cx:
+        rows = cx.execute(
+            "SELECT local_date, COUNT(*) AS n FROM messages "
+            "WHERE role = 'user' AND local_date <= ? "
+            "GROUP BY local_date ORDER BY local_date DESC LIMIT ?",
+            (end_date, days),
+        ).fetchall()
+    return [{"local_date": r["local_date"], "count": int(r["n"])} for r in reversed(rows)]
+
+
+def dashboard_vibe_distribution(
+    db_path: Path, *, end_date: str, days: int
+) -> list[dict[str, Any]]:
+    with connect(db_path) as cx:
+        rows = cx.execute(
+            "SELECT vibe, COUNT(*) AS n FROM messages "
+            "WHERE role = 'assistant' AND vibe IS NOT NULL "
+            "  AND local_date <= ? "
+            "  AND local_date >= date(?, '-' || ? || ' days') "
+            "GROUP BY vibe ORDER BY n DESC",
+            (end_date, end_date, days - 1),
+        ).fetchall()
+    total = sum(int(r["n"]) for r in rows) or 1
+    return [
+        {"vibe": r["vibe"], "count": int(r["n"]), "pct": int(r["n"]) / total}
+        for r in rows
+    ]
+
+
+def dashboard_hourly_density(
+    db_path: Path, *, end_date: str, days: int, tz_name: str
+) -> list[dict[str, int]]:
+    """Histogram of user messages by hour-of-day in the user's timezone.
+
+    SQLite's time arithmetic doesn't know about IANA timezones, so we read raw
+    UTC and convert in Python.
+    """
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(tz_name)
+    with connect(db_path) as cx:
+        rows = cx.execute(
+            "SELECT ts_utc FROM messages "
+            "WHERE role = 'user' "
+            "  AND local_date <= ? "
+            "  AND local_date >= date(?, '-' || ? || ' days')",
+            (end_date, end_date, days - 1),
+        ).fetchall()
+    buckets = [0] * 24
+    for r in rows:
+        try:
+            dt = datetime.fromisoformat(r["ts_utc"].replace("Z", "+00:00"))
+            local = dt.astimezone(tz)
+            buckets[local.hour] += 1
+        except (ValueError, AttributeError):
+            continue
+    return [{"hour": h, "count": c} for h, c in enumerate(buckets)]
+
+
+def dashboard_last_message_per_day(
+    db_path: Path, *, end_date: str, days: int, tz_name: str
+) -> list[dict[str, Any]]:
+    """For each of the last `days`, the local time of the last user message that day.
+
+    Used to render the sleep-window adherence row.
+    """
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(tz_name)
+    with connect(db_path) as cx:
+        rows = cx.execute(
+            "SELECT local_date, MAX(ts_utc) AS last_ts FROM messages "
+            "WHERE role = 'user' "
+            "  AND local_date <= ? "
+            "  AND local_date >= date(?, '-' || ? || ' days') "
+            "GROUP BY local_date ORDER BY local_date DESC",
+            (end_date, end_date, days - 1),
+        ).fetchall()
+    out = []
+    for r in rows:
+        if not r["last_ts"]:
+            continue
+        try:
+            dt = datetime.fromisoformat(r["last_ts"].replace("Z", "+00:00"))
+            local = dt.astimezone(tz)
+            out.append({
+                "local_date": r["local_date"],
+                "last_local_hhmm": local.strftime("%H:%M"),
+                "last_local_hour": local.hour + local.minute / 60.0,
+            })
+        except (ValueError, AttributeError):
+            continue
+    return out
+
+
+# ---------- auth ----------
+
+def auth_has_passcode(db_path: Path) -> bool:
+    with connect(db_path) as cx:
+        row = cx.execute("SELECT 1 FROM auth WHERE id = 1").fetchone()
+        return row is not None
+
+
+def auth_set_passcode(db_path: Path, passcode_hash: str) -> None:
+    """Insert or replace the single passcode row. Resets lockout state."""
+    now = _now_utc_iso()
+    with connect(db_path) as cx:
+        cx.execute(
+            "INSERT INTO auth (id, passcode_hash, created_at, failed_attempts, locked_until) "
+            "VALUES (1, ?, ?, 0, NULL) "
+            "ON CONFLICT(id) DO UPDATE SET "
+            "  passcode_hash = excluded.passcode_hash, "
+            "  created_at    = excluded.created_at, "
+            "  failed_attempts = 0, "
+            "  locked_until  = NULL",
+            (passcode_hash, now),
+        )
+
+
+def auth_get_state(db_path: Path) -> dict[str, Any] | None:
+    """Returns {'passcode_hash', 'failed_attempts', 'locked_until'} or None."""
+    with connect(db_path) as cx:
+        row = cx.execute(
+            "SELECT passcode_hash, failed_attempts, locked_until FROM auth WHERE id = 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def auth_record_failure(db_path: Path, locked_until_iso: str | None) -> int:
+    """Bump failed_attempts. If locked_until_iso is given, set the lockout. Returns new attempts count."""
+    with connect(db_path) as cx:
+        cx.execute(
+            "UPDATE auth SET failed_attempts = failed_attempts + 1, locked_until = COALESCE(?, locked_until) "
+            "WHERE id = 1",
+            (locked_until_iso,),
+        )
+        row = cx.execute("SELECT failed_attempts FROM auth WHERE id = 1").fetchone()
+        return row["failed_attempts"] if row else 0
+
+
+def auth_clear_failures(db_path: Path) -> None:
+    with connect(db_path) as cx:
+        cx.execute(
+            "UPDATE auth SET failed_attempts = 0, locked_until = NULL WHERE id = 1"
+        )
+
+
+def auth_delete(db_path: Path) -> None:
+    """Used by the reset CLI."""
+    with connect(db_path) as cx:
+        cx.execute("DELETE FROM auth WHERE id = 1")

@@ -1,6 +1,11 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+/**
+ * All requests are same-origin: dev uses Vite's proxy (configured in
+ * vite.config.ts), prod has FastAPI serving both /api and the SPA. So no
+ * absolute URL prefix is needed. We do need `credentials: "same-origin"`
+ * so the signed session cookie rides along.
+ */
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -14,8 +19,9 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(`${API_BASE}${url}`, {
+  const res = await fetch(url, {
     method,
+    credentials: "same-origin",
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
   });
@@ -25,12 +31,14 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
+
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(`${API_BASE}${queryKey.join("/")}`);
+    const url = queryKey.join("/");
+    const res = await fetch(url, { credentials: "same-origin" });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
@@ -46,7 +54,7 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      staleTime: 30_000,
       retry: false,
     },
     mutations: {

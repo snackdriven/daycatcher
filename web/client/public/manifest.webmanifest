@@ -1,0 +1,17 @@
+{
+  "name": "Meat-Suit",
+  "short_name": "Meat-Suit",
+  "description": "Private terminal for the brain.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#161412",
+  "theme_color": "#161412",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

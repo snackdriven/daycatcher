@@ -1,40 +1,43 @@
-import { Switch, Route, Router } from "wouter";
+import { Router, Route, Switch } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ThemeProvider } from "@/lib/theme";
-import { Layout } from "@/components/Layout";
-import Landing from "@/pages/Landing";
-import Demo from "@/pages/Demo";
+
+import { Shell } from "@/components/Shell";
+import { AuthGate } from "@/pages/AuthGate";
+import Chat from "@/pages/Chat";
+import Journal from "@/pages/Journal";
+import Data from "@/pages/Data";
+import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
 function AppRouter() {
   return (
     <Switch>
-      <Route path="/" component={Landing} />
-      <Route path="/demo" component={Demo} />
+      <Route path="/" component={Chat} />
+      <Route path="/journal" component={Journal} />
+      <Route path="/data" component={Data} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-function App() {
+export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <TooltipProvider>
-          <Toaster />
+      <TooltipProvider>
+        <Toaster />
+        <AuthGate>
           <Router hook={useHashLocation}>
-            <Layout>
+            <Shell>
               <AppRouter />
-            </Layout>
+            </Shell>
           </Router>
-        </TooltipProvider>
-      </ThemeProvider>
+        </AuthGate>
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }
-
-export default App;

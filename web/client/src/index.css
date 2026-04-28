@@ -2,350 +2,266 @@
 @tailwind components;
 @tailwind utilities;
 
-/* MEAT-SUIT — cool zine palette
-   Dusk paper, slate ink, deep teal, fog, with dusty pink as a pop.
-   Anti-corporate. Soft. Hand-touched. */
+/*
+ * Project Meat-Suit — palette
+ *
+ * Single-mood: "private terminal meets reading room". Warm dark base, one
+ * faded gold accent, four persona signatures used as identifiers (not as
+ * widespread surface colors). Both :root and .dark resolve to the same theme;
+ * a separate light mode would dilute the mood and is intentionally absent.
+ */
 
-:root {
-  --button-outline: rgba(28, 38, 52, 0.16);
-  --badge-outline: rgba(28, 38, 52, 0.10);
-  --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(28, 38, 52, 0.05);
-  --elevate-2: rgba(28, 38, 52, 0.10);
+:root,
+.dark {
+  /* elevate system tunables (kept from the template) */
+  --button-outline: rgba(255, 255, 255, 0.08);
+  --badge-outline: rgba(255, 255, 255, 0.05);
+  --opaque-button-border-intensity: 8;
+  --elevate-1: rgba(255, 255, 255, 0.04);
+  --elevate-2: rgba(255, 255, 255, 0.08);
 
-  /* Surfaces — cool dusk paper */
-  --background: 215 24% 93%;       /* #E5EAF0 cool fog */
-  --foreground: 215 32% 16%;       /* #1C2634 slate ink */
-  --border: 215 18% 78%;
-  --card: 215 28% 96%;             /* lifted paper */
-  --card-foreground: 215 32% 16%;
-  --card-border: 215 18% 82%;
-  --sidebar: 215 22% 90%;
-  --sidebar-foreground: 215 32% 16%;
-  --sidebar-border: 215 18% 78%;
-  --sidebar-primary: 188 56% 30%;
-  --sidebar-primary-foreground: 215 28% 96%;
-  --sidebar-accent: 215 18% 84%;
-  --sidebar-accent-foreground: 215 32% 16%;
-  --sidebar-ring: 188 56% 30%;
-  --popover: 215 28% 96%;
-  --popover-foreground: 215 32% 16%;
-  --popover-border: 215 18% 78%;
+  /* base shell ---------------------------------------------------- */
+  --background: 28 8% 8%;          /* warm near-black */
+  --foreground: 40 15% 92%;        /* dim warm ink */
+  --border: 28 6% 16%;
+  --input: 28 6% 18%;
+  --ring: 40 60% 70%;              /* matches accent */
 
-  /* Primary — deep teal */
-  --primary: 188 56% 30%;          /* #226C77 */
-  --primary-foreground: 215 28% 96%;
+  /* surfaces ------------------------------------------------------ */
+  --card: 28 6% 12%;
+  --card-foreground: 40 15% 92%;
+  --card-border: 28 6% 16%;
 
-  /* Secondary — fog button */
-  --secondary: 215 18% 84%;
-  --secondary-foreground: 215 32% 16%;
+  --popover: 28 6% 12%;
+  --popover-foreground: 40 15% 92%;
+  --popover-border: 28 6% 16%;
 
-  --muted: 215 16% 86%;
-  --muted-foreground: 215 14% 38%;
-  --accent: 200 30% 78%;           /* pale frost */
-  --accent-foreground: 215 32% 16%;
-  --destructive: 348 60% 46%;
-  --destructive-foreground: 215 28% 96%;
-  --input: 215 18% 74%;
-  --ring: 188 56% 30%;
+  /* sidebar (used as bottom nav on mobile + side rail on desktop) */
+  --sidebar: 28 6% 10%;
+  --sidebar-foreground: 40 15% 92%;
+  --sidebar-border: 28 6% 16%;
+  --sidebar-primary: 40 60% 70%;
+  --sidebar-primary-foreground: 28 8% 8%;
+  --sidebar-accent: 28 6% 16%;
+  --sidebar-accent-foreground: 40 15% 92%;
+  --sidebar-ring: 40 60% 70%;
 
-  /* Persona accents — all cool except feral_bff which gets the dusty pink */
-  --vibe-construct: 199 38% 38%;   /* slate teal */
-  --vibe-feral: 340 56% 60%;       /* dusty pink (the one warm) */
-  --vibe-stoic: 215 14% 32%;       /* deep slate */
-  --vibe-quiet: 172 22% 50%;       /* muted seafoam */
+  /* primary action --------------------------------------------- */
+  --primary: 40 60% 70%;           /* faded gold */
+  --primary-foreground: 28 8% 8%;
+  --secondary: 28 6% 16%;
+  --secondary-foreground: 40 15% 92%;
+  --muted: 28 6% 14%;
+  --muted-foreground: 30 8% 62%;
+  --accent: 40 60% 70%;
+  --accent-foreground: 28 8% 8%;
 
-  --paper-warm: 215 28% 96%;
-  --paper-deep: 215 22% 88%;
-  --ink-soft: 215 14% 38%;
+  --destructive: 4 55% 50%;
+  --destructive-foreground: 40 15% 92%;
 
-  --chart-1: 188 56% 30%;
-  --chart-2: 172 22% 50%;
-  --chart-3: 340 56% 60%;
-  --chart-4: 215 14% 32%;
-  --chart-5: 220 38% 52%;
+  /* charts (used on /data) — pulled from persona signatures + neutrals */
+  --chart-1: 15 75% 58%;           /* CEO burnt orange */
+  --chart-2: 280 35% 65%;          /* Feral dusty mauve */
+  --chart-3: 35 30% 55%;           /* Almanac faded khaki */
+  --chart-4: 145 18% 55%;          /* Innkeeper slow green */
+  --chart-5: 40 60% 70%;           /* gold accent */
 
-  --font-sans: 'General Sans', 'DM Sans', system-ui, sans-serif;
-  --font-serif: 'Zodiak', 'Source Serif 4', Georgia, serif;
-  --font-hand: 'Caveat', cursive;
-  --font-mono: 'IBM Plex Mono', Menlo, monospace;
-  --radius: 0.625rem;
+  /* persona signatures, named for direct use --------------------- */
+  --persona-ceo: 15 75% 58%;       /* burnt orange */
+  --persona-feral: 280 35% 65%;    /* dusty mauve */
+  --persona-almanac: 35 30% 55%;   /* faded khaki */
+  --persona-innkeeper: 145 18% 55%; /* slow green */
 
-  /* Cool soft shadows */
-  --shadow-2xs: 0 1px 0 0 hsl(215 32% 16% / 0.04);
-  --shadow-xs: 0 1px 2px 0 hsl(215 32% 16% / 0.06);
-  --shadow-sm: 0 1px 2px 0 hsl(215 32% 16% / 0.06), 0 2px 4px -1px hsl(215 32% 16% / 0.05);
-  --shadow: 0 2px 4px 0 hsl(215 32% 16% / 0.06), 0 4px 8px -2px hsl(215 32% 16% / 0.06);
-  --shadow-md: 0 4px 6px -1px hsl(215 32% 16% / 0.08), 0 2px 4px -2px hsl(215 32% 16% / 0.06);
-  --shadow-lg: 0 10px 24px -8px hsl(215 32% 16% / 0.18), 0 4px 8px -4px hsl(215 32% 16% / 0.08);
-  --shadow-xl: 0 20px 40px -16px hsl(215 32% 16% / 0.22), 0 8px 16px -8px hsl(215 32% 16% / 0.12);
-  --shadow-2xl: 0 30px 60px -24px hsl(215 32% 16% / 0.28);
+  /* typography --------------------------------------------------- */
+  /* Sans for chat/shell/UI; Newsreader for journal entries only;
+     JetBrains Mono on /data. Variables are mapped to Tailwind's
+     font-sans/font-serif/font-mono in tailwind.config.ts. */
+  --font-sans: "Inter Tight", Inter, system-ui, -apple-system, sans-serif;
+  --font-serif: "Newsreader", Georgia, serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  --radius: 0.5rem;
+
+  /* shadows kept zero — surfaces handle depth via background tone */
+  --shadow-2xs: 0 0 0 0 transparent;
+  --shadow-xs: 0 0 0 0 transparent;
+  --shadow-sm: 0 0 0 0 transparent;
+  --shadow: 0 0 0 0 transparent;
+  --shadow-md: 0 0 0 0 transparent;
+  --shadow-lg: 0 0 0 0 transparent;
+  --shadow-xl: 0 0 0 0 transparent;
+  --shadow-2xl: 0 0 0 0 transparent;
+
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
+  /* elevate-system fallback borders (kept verbatim — they make Buttons feel right) */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
-  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --sidebar-primary-border: hsl(
+    from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
   --sidebar-accent-border: hsl(var(--sidebar-accent));
-  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --sidebar-accent-border: hsl(
+    from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
   --primary-border: hsl(var(--primary));
-  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --primary-border: hsl(
+    from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
   --secondary-border: hsl(var(--secondary));
-  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --secondary-border: hsl(
+    from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
   --muted-border: hsl(var(--muted));
-  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --muted-border: hsl(
+    from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
   --accent-border: hsl(var(--accent));
-  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --accent-border: hsl(
+    from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
   --destructive-border: hsl(var(--destructive));
-  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --destructive-border: hsl(
+    from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
 }
 
-.dark {
-  --button-outline: rgba(220, 230, 240, 0.12);
-  --badge-outline: rgba(220, 230, 240, 0.07);
-  --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(220, 230, 240, 0.05);
-  --elevate-2: rgba(220, 230, 240, 0.10);
-
-  --background: 215 28% 9%;        /* deep slate */
-  --foreground: 210 22% 88%;
-  --border: 215 14% 22%;
-  --card: 215 28% 12%;
-  --card-foreground: 210 22% 88%;
-  --card-border: 215 14% 18%;
-  --sidebar: 215 28% 11%;
-  --sidebar-foreground: 210 22% 88%;
-  --sidebar-border: 215 14% 20%;
-  --sidebar-primary: 188 50% 56%;
-  --sidebar-primary-foreground: 215 28% 9%;
-  --sidebar-accent: 215 14% 20%;
-  --sidebar-accent-foreground: 210 22% 88%;
-  --sidebar-ring: 188 50% 56%;
-  --popover: 215 28% 12%;
-  --popover-foreground: 210 22% 88%;
-  --popover-border: 215 14% 22%;
-
-  --primary: 188 50% 56%;
-  --primary-foreground: 215 28% 9%;
-  --secondary: 215 14% 18%;
-  --secondary-foreground: 210 22% 88%;
-  --muted: 215 14% 16%;
-  --muted-foreground: 210 14% 64%;
-  --accent: 200 22% 32%;
-  --accent-foreground: 210 22% 88%;
-  --destructive: 348 56% 60%;
-  --destructive-foreground: 210 22% 88%;
-  --input: 215 14% 26%;
-  --ring: 188 50% 56%;
-
-  --vibe-construct: 199 36% 60%;
-  --vibe-feral: 340 56% 70%;
-  --vibe-stoic: 210 16% 70%;
-  --vibe-quiet: 172 24% 60%;
-
-  --paper-warm: 215 28% 12%;
-  --paper-deep: 215 28% 16%;
-  --ink-soft: 210 14% 64%;
-
-  --chart-1: 188 50% 56%;
-  --chart-2: 172 24% 60%;
-  --chart-3: 340 56% 70%;
-  --chart-4: 210 16% 70%;
-  --chart-5: 220 38% 62%;
-
-  --shadow-2xs: 0 1px 0 0 hsl(0 0% 0% / 0.30);
-  --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.30);
-  --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.30), 0 2px 4px -1px hsl(0 0% 0% / 0.30);
-  --shadow: 0 2px 4px 0 hsl(0 0% 0% / 0.30), 0 4px 8px -2px hsl(0 0% 0% / 0.30);
-  --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.40), 0 2px 4px -2px hsl(0 0% 0% / 0.40);
-  --shadow-lg: 0 10px 24px -8px hsl(0 0% 0% / 0.50);
-  --shadow-xl: 0 20px 40px -16px hsl(0 0% 0% / 0.60);
-  --shadow-2xl: 0 30px 60px -24px hsl(0 0% 0% / 0.70);
-
-  --sidebar-primary-border: hsl(var(--sidebar-primary));
-  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --sidebar-accent-border: hsl(var(--sidebar-accent));
-  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --primary-border: hsl(var(--primary));
-  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --secondary-border: hsl(var(--secondary));
-  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --muted-border: hsl(var(--muted));
-  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --accent-border: hsl(var(--accent));
-  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --destructive-border: hsl(var(--destructive));
-  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+html, body, #root {
+  height: 100%;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
 
 @layer base {
-  * { @apply border-border; }
-  html { scroll-behavior: smooth; }
+  * {
+    @apply border-border;
+  }
+
   body {
-    @apply font-sans antialiased text-foreground;
-    background-color: hsl(var(--background));
-    /* Subtle paper grain so it never feels flat */
+    @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+    /* Subtle texture: a near-imperceptible grain so the warm dark feels paper-ish. */
     background-image:
-      radial-gradient(at 20% 10%, hsl(200 30% 86% / 0.55), transparent 50%),
-      radial-gradient(at 80% 90%, hsl(220 26% 80% / 0.40), transparent 55%),
-      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.11  0 0 0 0 0.15  0 0 0 0 0.20  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-    background-attachment: fixed;
-    background-size: auto, auto, 320px 320px;
-  }
-  .dark body {
-    background-image:
-      radial-gradient(at 20% 10%, hsl(215 32% 14% / 0.6), transparent 50%),
-      radial-gradient(at 80% 90%, hsl(188 30% 18% / 0.45), transparent 55%),
-      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.78  0 0 0 0 0.86  0 0 0 0 0.94  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      radial-gradient(at 20% 10%, hsl(28 10% 10%) 0%, transparent 60%),
+      radial-gradient(at 80% 80%, hsl(28 10% 10%) 0%, transparent 55%);
   }
 
-  h1, h2, h3, h4 {
+  /* Journal-only serif territory */
+  .font-journal {
     font-family: var(--font-serif);
-    font-weight: 500;
-    letter-spacing: -0.01em;
-    line-height: 1.1;
-  }
-  .hand { font-family: var(--font-hand); }
-
-  a { text-underline-offset: 3px; }
-
-  ::selection {
-    background: hsl(var(--primary) / 0.20);
-    color: hsl(var(--foreground));
-  }
-}
-
-@layer components {
-  /* Tape — torn-paper marker for callouts. Cool dusty pink. */
-  .tape {
-    position: relative;
-    display: inline-block;
-    padding: 0.25rem 0.7rem;
-    background: hsl(340 50% 78% / 0.65);
-    color: hsl(340 40% 22%);
-    font-family: var(--font-hand);
-    font-size: 1.15rem;
-    line-height: 1;
-    transform: rotate(-2deg);
-    box-shadow: 0 1px 2px hsl(215 32% 16% / 0.10);
-  }
-  .tape::before, .tape::after {
-    content: "";
-    position: absolute;
-    top: 0; bottom: 0;
-    width: 6px;
-    background-image: radial-gradient(circle at 2px 50%, hsl(340 40% 70% / 0.7) 1px, transparent 2px);
-    background-size: 6px 6px;
-  }
-  .tape::before { left: -3px; }
-  .tape::after { right: -3px; transform: scaleX(-1); }
-
-  /* "Note" cards — paper with cool tint */
-  .note {
-    background: hsl(var(--card));
-    border: 1px solid hsl(var(--card-border));
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-sm);
-  }
-  .note-warm {
-    background:
-      linear-gradient(180deg, hsl(210 32% 96%) 0%, hsl(215 22% 90%) 100%);
-    border: 1px solid hsl(215 18% 80%);
-    box-shadow: var(--shadow-md);
-  }
-  .dark .note-warm {
-    background:
-      linear-gradient(180deg, hsl(215 28% 14%) 0%, hsl(215 28% 11%) 100%);
-    border: 1px solid hsl(215 14% 22%);
-  }
-
-  .squiggle { display: block; height: 12px; width: 100%; color: currentColor; }
-
-  .sticker { display: inline-block; transform-origin: center; }
-  .rot-1 { transform: rotate(-1.5deg); }
-  .rot-2 { transform: rotate(1.2deg); }
-  .rot-3 { transform: rotate(-0.6deg); }
-
-  .vibe-dot {
-    display: inline-block;
-    width: 0.6rem; height: 0.6rem;
-    border-radius: 9999px;
-    background: hsl(var(--vibe));
-    box-shadow: 0 0 0 3px hsl(var(--vibe) / 0.18);
-  }
-
-  .wrap { max-width: 72rem; margin-left: auto; margin-right: auto; padding-left: 1.25rem; padding-right: 1.25rem; }
-  @media (min-width: 768px) { .wrap { padding-left: 2rem; padding-right: 2rem; } }
-
-  .bubble {
-    max-width: 80%;
-    padding: 0.7rem 0.95rem;
-    border-radius: 1rem;
-    line-height: 1.45;
-    word-wrap: break-word;
-  }
-  .bubble-user {
-    background: hsl(var(--primary));
-    color: hsl(var(--primary-foreground));
-    border-bottom-right-radius: 0.35rem;
-  }
-  .bubble-bot {
-    background: hsl(var(--card));
-    color: hsl(var(--card-foreground));
-    border: 1px solid hsl(var(--card-border));
-    border-bottom-left-radius: 0.35rem;
-  }
-
-  .typing span {
-    display: inline-block;
-    width: 6px; height: 6px;
-    margin-right: 3px;
-    border-radius: 9999px;
-    background: hsl(var(--muted-foreground));
-    animation: bob 1s infinite ease-in-out;
-  }
-  .typing span:nth-child(2) { animation-delay: 0.15s; }
-  .typing span:nth-child(3) { animation-delay: 0.3s; }
-  @keyframes bob {
-    0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-    40% { transform: translateY(-4px); opacity: 1; }
+    font-feature-settings: "ss01", "lnum";
   }
 }
 
 @layer utilities {
-  input[type='search']::-webkit-search-cancel-button { @apply hidden; }
+  /* Hide ugly search cancel button until we can style it properly */
+  input[type='search']::-webkit-search-cancel-button {
+    @apply hidden;
+  }
+
+  /* Placeholder styling for contentEditable div */
   [contenteditable][data-placeholder]:empty::before {
     content: attr(data-placeholder);
     color: hsl(var(--muted-foreground));
     pointer-events: none;
   }
-  .no-default-hover-elevate {}
-  .no-default-active-elevate {}
-  .toggle-elevate::before, .toggle-elevate-2::before {
-    content: ''; pointer-events: none; position: absolute; inset: 0;
-    border-radius: inherit; z-index: -1;
+
+  /* Persona-tinted utility classes — apply to the chat composer ring,
+     persona switcher fill, and assistant message rail. Driven by data-persona. */
+  .persona-tint {
+    color: hsl(var(--persona-tint));
+    border-color: hsl(var(--persona-tint) / 0.4);
   }
-  .toggle-elevate.toggle-elevated::before { background-color: var(--elevate-2); }
-  .border.toggle-elevate::before { inset: -1px; }
+
+  .persona-fill {
+    background-color: hsl(var(--persona-tint));
+    color: hsl(28 8% 8%);
+  }
+
+  /* Unread dot, used in nav */
+  .unread-dot::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: hsl(var(--accent));
+  }
+
+  /* Elevate-system escape hatches (kept) */
+  .no-default-hover-elevate {
+  }
+
+  .no-default-active-elevate {
+  }
+
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: '';
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: -1;
+  }
+
+  .toggle-elevate.toggle-elevated::before {
+    background-color: var(--elevate-2);
+  }
+
+  .border.toggle-elevate::before {
+    inset: -1px;
+  }
+
   .hover-elevate:not(.no-default-hover-elevate),
   .active-elevate:not(.no-default-active-elevate),
   .hover-elevate-2:not(.no-default-hover-elevate),
   .active-elevate-2:not(.no-default-active-elevate) {
-    position: relative; z-index: 0;
+    position: relative;
+    z-index: 0;
   }
+
   .hover-elevate:not(.no-default-hover-elevate)::after,
   .active-elevate:not(.no-default-active-elevate)::after,
   .hover-elevate-2:not(.no-default-hover-elevate)::after,
   .active-elevate-2:not(.no-default-active-elevate)::after {
-    content: ''; pointer-events: none; position: absolute; inset: 0;
-    border-radius: inherit; z-index: 999;
+    content: '';
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: 999;
   }
+
   .hover-elevate:hover:not(.no-default-hover-elevate)::after,
-  .active-elevate:active:not(.no-default-active-elevate)::after { background-color: var(--elevate-1); }
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+
   .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
-  .active-elevate-2:active:not(.no-default-active-elevate)::after { background-color: var(--elevate-2); }
+  .active-elevate-2:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+
   .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
   .border.active-elevate:not(.no-active-interaction-elevate)::after,
   .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
   .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
-  .border.hover-elevate:not(.no-hover-interaction-elevate)::after { inset: -1px; }
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
+    inset: -1px;
+  }
+}
+
+/* Kill native number-input spinners — they look ugly in the dark UI */
+@layer base {
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
 }
