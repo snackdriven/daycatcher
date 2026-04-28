@@ -6,7 +6,7 @@ The scribe (Mind 2) and weaver (Mind 3) only live in the python version. They ne
 
 ## what's here
 
-- **Landing page** explaining the four-mind architecture, the four personas, and what the system actually does.
+- **Landing page** explaining the architecture, the four personas, and what the system actually does.
 - **Interactive demo** at `/#/demo`. Switch between the four vibes. Each vibe keeps its own conversation alive on the server. Refresh-safe. Tap "fresh" to wipe a single vibe.
 
 ## stack

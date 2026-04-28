@@ -137,7 +137,7 @@ The Persona only ever sees the rolling 20-message chat window. It never reads jo
 cd web && npm install && npm run dev
 ```
 
-Stack: Express + Vite + React + Tailwind + SQLite + OpenAI Responses API.
+Stack: Express + Vite + React + Tailwind + SQLite, talking to any OpenAI-compatible Chat Completions endpoint (defaults to Gemini's free tier, like the python side).
 
 ---
 
@@ -148,9 +148,12 @@ meat_suit/
 ├── run.py
 ├── requirements.txt
 ├── .env.example
+├── scripts/
+│   └── check_llm.py       # one-shot probe: does the LLM endpoint reply?
 ├── meat_suit/             # the python bot
 │   ├── config.py          # env loader
 │   ├── db.py              # sqlite, 8 tables
+│   ├── time_ctx.py        # time + message-context notes for persona/weaver
 │   ├── nudges.py          # bait pools per persona
 │   ├── low_spoon.py       # button menu + per-persona acks
 │   ├── body_check.py      # /check poll definition
