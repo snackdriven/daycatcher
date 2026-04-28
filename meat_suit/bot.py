@@ -615,7 +615,8 @@ async def _run_nudge(app: Application) -> None:
     if not cfg.nudges_enabled:
         return
     vibe_key = db.get_vibe(cfg.database_path, DEFAULT_VIBE)
-    text = nudges.pick(vibe_key)
+    hour = datetime.now(ZoneInfo(cfg.timezone)).hour
+    text = nudges.pick(vibe_key, hour=hour)
     db.insert_message(cfg.database_path, local_date=_today_local(cfg),
                       role="assistant", vibe=vibe_key, content=text)
     try:
