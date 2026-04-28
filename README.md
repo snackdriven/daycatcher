@@ -6,7 +6,7 @@ Meat-Suit takes the question out of the room.
 
 You open a chat tab. There are four AI voices in it, and you pick whichever one you can stand that day. They riff with you. They don't survey you. They have no idea anything is being recorded. As far as the chatting voice knows, the conversation evaporates the second you close the tab.
 
-Behind a wall that voice can't see through, a second program reads what you typed and pulls structure out of the exhaust. A third program waits until 11:59 PM and writes the day's journal entry in a voice trained on how you actually write. Sunday at 10 PM a fourth pass reads the whole week and notices what you couldn't see from inside it. The chatting voice has no access to any of them and no idea they exist.
+Behind a wall that voice can't see through, a second program reads what you typed and pulls structure out of the exhaust. A third program waits until 23:59 and writes the day's journal entry in a voice trained on how you actually write. The same program runs again Sunday at 22:00 and writes a paragraph about the whole week. The chatting voice has no access to any of them and no idea they exist.
 
 What you get back is a journal you didn't write. The Data tab fills itself in. The Sunday paragraph knows things about your week you'd already forgotten. None of which you had to earn.
 
@@ -26,26 +26,24 @@ The Persona is, by design, a goldfish with opinions. Its memory is a rolling 20-
 
 ## The four voices
 
-Four personas share the chat tab. Switch any time from the header. Each one carries its register through every interaction, including the background nudges.
-
 - `the CEO` (C) — calm, clipped, faintly amused. Directives over hand-holding.
 - `the Feral BFF` (F) — loud, lowercase, will roast you with love. Minimal punctuation.
 - `the Almanac` (A) — spare, observational, steady cadence. Very few questions.
 - `the Innkeeper` (I) — soft, attentive, low-volume kindness. Hospitality cues.
 
-Mid-thread switches are fine. The new voice picks up where the last one left off, in their own register, like a friend who tagged in. The Weaver reads recent samples of how *you* actually write and mirrors your cadence when it ghostwrites the journal, so the entries don't feel like they came from a content farm.
+The Weaver reads recent samples of how *you* actually write and mirrors your cadence when it ghostwrites the journal, so the entries don't feel like they came from a content farm.
 
 ---
 
-## The four surfaces
+## The surfaces
 
 **Chat.** Top-right of the chat page is a letter switcher: `C / F / A / I`. Tap one to swap voices. The `?` next to it opens a card explaining who's who.
 
 **Journal.** A second tab lists daily entries newest-first, with a small unread dot when the Weaver has shipped one you haven't opened. Sunday entries get a separate weekly look-back ribbon.
 
-**Data.** A third tab is a quiet dashboard. Total messages, current streak, percent-after-11pm, vibe distribution, sleep adherence dots, hourly density, this-week-vs-last-week. It's there so you can look at it and close the tab.
+**Data.** A third tab is a quiet dashboard. Total messages, current streak, percent-after-23:00, vibe distribution, sleep adherence dots, hourly density, this-week-vs-last-week. It's there so you can look at it and close the tab.
 
-**Settings.** Default vibe, sleep windows (weeknight + weekend cutoff hours), nudge toggles, "snooze tonight" for the sleep nudge, full JSON export of everything, and a lock button that clears your session cookie.
+**Settings.** Default vibe (the UI's word for persona), sleep windows (weeknight + weekend cutoff hours), nudge toggles, "snooze tonight" for the sleep nudge, full JSON export of everything, and a lock button that clears your session cookie.
 
 There is also a check-in button. If you tap it the active persona drops a single in-character status line into the chat. No follow-up question, no "tell me more." That is the whole interaction.
 
@@ -60,7 +58,6 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 cp .env.example .env
-# fill in LLM_API_KEY, optionally edit TIMEZONE and the sleep cutoffs
 python run.py
 ```
 
@@ -68,7 +65,7 @@ Open `http://127.0.0.1:5050/`. First boot drops you on a setup screen to pick a 
 
 One secret to fill in:
 
-**LLM_API_KEY.** Default config uses Gemini's free tier. Grab one at <https://aistudio.google.com/apikey> with a Google account, no card required. Plenty for one-user daily use (1500 req/day on Flash).
+**LLM_API_KEY.** Default config uses Gemini's free tier. Grab one at <https://aistudio.google.com/apikey> with a Google account, no card required. Plenty for one-user daily use.
 
 Want OpenAI, Groq, or OpenRouter instead? Same SDK, different base URL. Set `LLM_BASE_URL` and the model names in `.env`. Examples are commented in `.env.example`.
 
@@ -82,7 +79,7 @@ python -m meat_suit.reset_passcode
 
 That wipes the stored hash and clears the lockout. Next boot puts you back on the setup screen.
 
-### Lockout policy
+### Lockout
 
 Five wrong passcodes locks the app for 15 minutes. The lockout is global (single-tenant). The reset command above clears it.
 
@@ -94,7 +91,7 @@ Five wrong passcodes locks the app for 15 minutes. The lockout is global (single
 - 11:00 — anti-PDA nudge (skip with `NUDGES_ENABLED=0`)
 - 17:30 — anti-PDA nudge
 - 23:59 — Weaver writes and delivers the daily entry
-- 22:00 Sunday — weekly Weaver delivers the pattern paragraph
+- Sunday 22:00 — Weaver delivers the weekly pattern paragraph
 - At each sleep cutoff — sleep nudge if you're still messaging past it
 
 Nudges land in the chat as `system_nudge` rows. They show up the next time the chat tab refreshes (the chat polls every 30s while open). No push notification, no badge. If the tab is closed you'll see them next time you open it.
@@ -117,19 +114,13 @@ Everything lives in `./data/meatsuit.db`. Local SQLite, single file, no cloud an
 
 The passcode is stored as an argon2id hash. The session cookie is httpOnly, signed, and expires 30 days after your last visit.
 
-The Persona only ever sees the rolling 20-message chat window. It never reads journals, signals, or polls. That part is on purpose.
-
 The full JSON export under Settings dumps everything: messages, journal, vibe history, signals, sleep events, prefs.
 
 ---
 
 ## Exposing it (optional)
 
-Default bind is `127.0.0.1:5050`, localhost only. If you want to reach the app from your phone or another machine, run it behind a tunnel:
-
-- Cloudflare Tunnel
-- Tailscale Funnel
-- ngrok
+Default bind is `127.0.0.1:5050`, localhost only. If you want to reach the app from your phone or another machine, run it behind a tunnel: Cloudflare Tunnel, Tailscale Funnel, or ngrok.
 
 Set `WEB_BIND_HOST=0.0.0.0` and `WEB_COOKIE_SECURE=1` only when the tunnel terminates HTTPS for you. Anything else and the cookie won't make the round trip.
 
@@ -160,13 +151,10 @@ meat-suit/
 │       └── weaver.py           # mind 3, midnight ghostwriter
 ├── web/                        # SPA, served by FastAPI on the same origin
 │   └── client/                 # vite + react + tailwind + shadcn
-└── legacy/                     # the old telegram bot, kept for reference
-    ├── bot.py
-    ├── body_check.py
-    └── low_spoon.py
+└── legacy/                     # original telegram bot, not wired into anything
 ```
 
-The Telegram bot was the original front end. It's parked under `legacy/` and no longer wired into anything. The web app is the only entry point now.
+The original Telegram bot lives under `legacy/`. It's not wired into anything anymore.
 
 ---
 
