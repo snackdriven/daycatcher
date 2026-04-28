@@ -20,7 +20,7 @@ What you get back is a journal you didn't write. The Data tab fills itself in. T
 | 2   | **Scribe**  | Extracts JSON from chat exhaust every 30 min | raw transcripts only         |
 | 3   | **Weaver**  | Writes the daily journal at 23:59, the weekly recap on Sunday at 22:00 | the day or week's structured bundle |
 
-The Persona is, by design, a goldfish with opinions. Its memory is a rolling 20-message buffer and that's all there is. It cannot read journals or signals. It cannot debrief you or reference yesterday because it does not know what either of those things are. The Scribe and Weaver are downstream of it and invisible to it.
+The Persona is a goldfish with opinions. Its memory is the last 20 messages. Scribe and Weaver are downstream of it and invisible to it.
 
 ---
 
@@ -31,21 +31,17 @@ The Persona is, by design, a goldfish with opinions. Its memory is a rolling 20-
 - `the Almanac` (A) — spare, observational, steady cadence. Very few questions.
 - `the Innkeeper` (I) — soft, attentive, low-volume kindness. Hospitality cues.
 
-The Weaver reads recent samples of how *you* actually write and mirrors your cadence when it ghostwrites the journal, so the entries don't feel like they came from a content farm.
-
 ---
 
 ## The surfaces
 
-**Chat.** Top-right of the chat page is a letter switcher: `C / F / A / I`. Tap one to swap voices. The `?` next to it opens a card explaining who's who.
+**Chat.** Letter switcher in the top-right (`C / F / A / I`) swaps voices. The `?` opens a card explaining who's who. A check-in button drops a single in-character status line, no follow-up.
 
-**Journal.** A second tab lists daily entries newest-first, with a small unread dot when the Weaver has shipped one you haven't opened. Sunday entries get a separate weekly look-back ribbon.
+**Journal.** Daily entries newest-first, with an unread dot when the Weaver ships one. Sunday entries get a weekly look-back ribbon.
 
-**Data.** A third tab is a quiet dashboard. Total messages, current streak, percent-after-23:00, vibe distribution, sleep adherence dots, hourly density, this-week-vs-last-week. It's there so you can look at it and close the tab.
+**Data.** Quiet dashboard: total messages, current streak, percent-after-23:00, vibe distribution, sleep adherence dots, hourly density, this-week-vs-last-week.
 
-**Settings.** Default vibe (the UI's word for persona), sleep windows (weeknight + weekend cutoff hours), nudge toggles, "snooze tonight" for the sleep nudge, full JSON export of everything, and a lock button that clears your session cookie.
-
-There is also a check-in button. If you tap it the active persona drops a single in-character status line into the chat. No follow-up question, no "tell me more." That is the whole interaction.
+**Settings.** Default vibe (the UI's word for persona), sleep windows, nudge toggles, "snooze tonight," full JSON export, and a lock button that clears your session cookie.
 
 ---
 
@@ -61,27 +57,15 @@ cp .env.example .env
 python run.py
 ```
 
-Open `http://127.0.0.1:5050/`. First boot drops you on a setup screen to pick a 4-12 digit passcode. After that it's a login screen, then the chat.
+Open `http://127.0.0.1:5050/`. First boot is a setup screen for a 4-12 digit passcode. After that it's a login screen, then the chat.
 
-One secret to fill in:
+**LLM_API_KEY.** Default is Gemini's free tier. Grab one at <https://aistudio.google.com/apikey>, no card. Want OpenAI, Groq, or OpenRouter? Set `LLM_BASE_URL` and the model names; examples are commented in `.env.example`.
 
-**LLM_API_KEY.** Default config uses Gemini's free tier. Grab one at <https://aistudio.google.com/apikey> with a Google account, no card required. Plenty for one-user daily use.
+The cookie key (`MEAT_SUIT_COOKIE_SECRET`) auto-generates on first boot and writes itself to `.env`.
 
-Want OpenAI, Groq, or OpenRouter instead? Same SDK, different base URL. Set `LLM_BASE_URL` and the model names in `.env`. Examples are commented in `.env.example`.
+Forgot the passcode? Run `python -m meat_suit.reset_passcode` to wipe the hash and clear the lockout.
 
-The cookie signing key (`MEAT_SUIT_COOKIE_SECRET`) auto-generates on first boot and writes itself back into `.env`. If you upgraded from a pre-passcode build, the legacy `MEAT_SUIT_WEB_KEY` is read as a fallback so your existing session stays valid.
-
-### Forgot the passcode
-
-```bash
-python -m meat_suit.reset_passcode
-```
-
-That wipes the stored hash and clears the lockout. Next boot puts you back on the setup screen.
-
-### Lockout
-
-Five wrong passcodes locks the app for 15 minutes. The lockout is global (single-tenant). The reset command above clears it.
+**Lockout.** Five wrong passcodes locks the app for 15 minutes, global.
 
 ---
 
@@ -94,35 +78,29 @@ Five wrong passcodes locks the app for 15 minutes. The lockout is global (single
 - Sunday 22:00 — Weaver delivers the weekly pattern paragraph
 - At each sleep cutoff — sleep nudge if you're still messaging past it
 
-Nudges land in the chat as `system_nudge` rows. They show up the next time the chat tab refreshes (the chat polls every 30s while open). No push notification, no badge. If the tab is closed you'll see them next time you open it.
+Nudges land in the chat as `system_nudge` rows on the next refresh. No push, no badge.
 
 ---
 
 ## Time awareness
 
-The Persona gets a small time note on every reply: what day it is, what part of the day it is, whether it's a weekend evening, and whether you're past your sleep cutoff. It also gets told when you've been gone for several days, with explicit instructions not to greet you or ask where you went.
+The Persona gets a small time note on every reply: day, part of day, whether it's a weekend evening, whether you're past your sleep cutoff. It's also told when you've been gone for several days, with instructions not to greet you or ask where you went.
 
-A nightly job watches the clock. If you're still messaging past your weeknight cutoff (default 23:00) or weekend cutoff (default 01:00), the active persona drops a single in-character sleep observation that you can ignore. It will not nag twice the same night. The "snooze tonight" button in Settings kills only that night's sleep nudge.
+A nightly job watches the clock. If you're still messaging past your weeknight cutoff (default 23:00) or weekend cutoff (default 01:00), the active persona drops a single in-character sleep observation. It won't nag twice the same night. "Snooze tonight" in Settings kills only that night's nudge.
 
-The Weaver also gets two small extras: a short rhythm summary of when the day's chat clustered, and the dates of any late-night sessions inside the week it's writing about. It uses these as texture, not as judgment.
+The Weaver also gets a rhythm summary of when the day's chat clustered and the dates of any late-night sessions in the week it's writing about. Texture, not judgment.
 
 ---
 
 ## Privacy
 
-Everything lives in `./data/meatsuit.db`. Local SQLite, single file, no cloud anything.
-
-The passcode is stored as an argon2id hash. The session cookie is httpOnly, signed, and expires 30 days after your last visit.
-
-The full JSON export under Settings dumps everything: messages, journal, vibe history, signals, sleep events, prefs.
+Everything lives in `./data/meatsuit.db`. Local SQLite, single file, no cloud. The passcode is an argon2id hash; the session cookie is httpOnly, signed, and expires 30 days after your last visit. The full JSON export under Settings dumps everything: messages, journal, vibe history, signals, sleep events, prefs.
 
 ---
 
 ## Exposing it (optional)
 
-Default bind is `127.0.0.1:5050`, localhost only. If you want to reach the app from your phone or another machine, run it behind a tunnel: Cloudflare Tunnel, Tailscale Funnel, or ngrok.
-
-Set `WEB_BIND_HOST=0.0.0.0` and `WEB_COOKIE_SECURE=1` only when the tunnel terminates HTTPS for you. Anything else and the cookie won't make the round trip.
+Default bind is `127.0.0.1:5050`, localhost only. To reach it from your phone, run it behind a tunnel: Cloudflare Tunnel, Tailscale Funnel, or ngrok. Set `WEB_BIND_HOST=0.0.0.0` and `WEB_COOKIE_SECURE=1` only when the tunnel terminates HTTPS.
 
 ---
 
@@ -154,10 +132,8 @@ meat-suit/
 └── legacy/                     # original telegram bot, not wired into anything
 ```
 
-The original Telegram bot lives under `legacy/`. It's not wired into anything anymore.
-
 ---
 
 ## License
 
-MIT. Built slow. Built quiet.
+MIT.
