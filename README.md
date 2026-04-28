@@ -4,11 +4,11 @@ Every app that wants to know about your life makes you tell it. "How are you fee
 
 Meat-Suit takes the question out of the room.
 
-You open a chat tab. There are four AI voices in it, and you pick whichever one you can stand that day. They riff with you. They don't survey you. They have no idea anything is being recorded. As far as the chatting voice knows, the conversation evaporates the second you close the tab.
+You open a chat tab. There are four AI voices in it, and you pick whichever one you can stand that day. As far as that voice knows, the conversation evaporates the second you close the tab.
 
-Behind a wall that voice can't see through, a second program reads what you typed and pulls structure out of the exhaust. A third program waits until 23:59 and writes the day's journal entry in a voice trained on how you actually write. The same program runs again Sunday at 22:00 and writes a paragraph about the whole week. The chatting voice has no access to any of them and no idea they exist.
+Behind a wall it can't see through, a second program reads what you typed and pulls structure out of the exhaust. A third waits until 23:59 and writes the day's journal entry in your own cadence, then runs again Sunday at 22:00 for a paragraph about the week.
 
-What you get back is a journal you didn't write. The Data tab fills itself in. The Sunday paragraph knows things about your week you'd already forgotten. None of which you had to earn.
+What you get back is a journal you didn't write and a Sunday paragraph that knows things about your week you'd already forgotten.
 
 ---
 
