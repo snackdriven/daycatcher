@@ -1,12 +1,14 @@
 # Project Meat-Suit
 
-You are going to text a smug AI for two weeks and at the end of it the app will hand you a journal you didn't write, in a voice that sounds suspiciously like yours, describing a week you only half remember living.
+Every app that wants to know about your life makes you tell it. "How are you feeling, on a scale of 1 to 10?" The act of being asked is the act that breaks the data.
 
-That's the whole pitch.
+Meat-Suit takes the question out of the room.
 
-It's a single-user web app. You banter with a persona in a browser tab. A second mind quietly extracts signal from the chat exhaust. A third mind runs at 11:59 PM and ghostwrites the day. None of them know the others exist.
+You open a chat tab. There are four AI voices in it, and you pick whichever one you can stand that day. They riff with you. They don't survey you. They have no idea anything is being recorded. As far as the chatting voice knows, the conversation evaporates the second you close the tab.
 
-It's for anyone who has tried to keep a journal and bounced off it because the act of being asked to journal makes you stop wanting to.
+Behind a wall that voice can't see through, a second program reads what you typed and pulls structure out of the exhaust. A third program waits until 11:59 PM and writes the day's journal entry in a voice trained on how you actually write. Sunday at 10 PM a fourth pass reads the whole week and notices what you couldn't see from inside it. The chatting voice has no access to any of them and no idea they exist.
+
+What you get back is a journal you didn't write. The Data tab fills itself in. The Sunday paragraph knows things about your week you'd already forgotten. None of which you had to earn.
 
 ---
 
@@ -15,35 +17,37 @@ It's for anyone who has tried to keep a journal and bounced off it because the a
 |     | Mind        | Job                                       | Sees                            |
 | --- | ----------- | ----------------------------------------- | ------------------------------- |
 | 1   | **Persona** | Banters with you in the chat tab          | the last 20 messages, nothing else |
-| 2   | **Scribe**  | Extracts JSON from chat exhaust           | raw transcripts only            |
-| 3   | **Weaver**  | Writes the daily journal at 23:59         | the day's structured bundle     |
+| 2   | **Scribe**  | Extracts JSON from chat exhaust every 30 min | raw transcripts only         |
+| 3   | **Weaver**  | Writes the daily journal at 23:59, the weekly recap on Sunday at 22:00 | the day or week's structured bundle |
 
-The Persona has zero awareness of the journal. That is the entire architectural point. You stay relaxed because you're not writing for posterity. You're just talking. The thing that writes things down has never met you and never will.
+The Persona is, by design, a goldfish with opinions. Its memory is a rolling 20-message buffer and that's all there is. It cannot read journals or signals. It cannot debrief you or reference yesterday because it does not know what either of those things are. The Scribe and Weaver are downstream of it and invisible to it.
 
 ---
 
-## What you can actually do with it
+## The four voices
 
-**Chat.** Top-right of the chat page is a four-letter switcher: `C / F / A / I`. Tap one to swap voices mid-thread. The new voice picks up from where the last one left off. The `?` next to the switcher opens a card explaining who's who.
+Four personas share the chat tab. Switch any time from the header. Each one carries its register through every interaction, including the background nudges.
+
+- `the CEO` (C) — calm, clipped, faintly amused. Directives over hand-holding.
+- `the Feral BFF` (F) — loud, lowercase, will roast you with love. Minimal punctuation.
+- `the Almanac` (A) — spare, observational, steady cadence. Very few questions.
+- `the Innkeeper` (I) — soft, attentive, low-volume kindness. Hospitality cues.
+
+Mid-thread switches are fine. The new voice picks up where the last one left off, in their own register, like a friend who tagged in. The Weaver reads recent samples of how *you* actually write and mirrors your cadence when it ghostwrites the journal, so the entries don't feel like they came from a content farm.
+
+---
+
+## The four surfaces
+
+**Chat.** Top-right of the chat page is a letter switcher: `C / F / A / I`. Tap one to swap voices. The `?` next to it opens a card explaining who's who.
 
 **Journal.** A second tab lists daily entries newest-first, with a small unread dot when the Weaver has shipped one you haven't opened. Sunday entries get a separate weekly look-back ribbon.
 
-**Data.** A third tab is a quiet dashboard. Total messages, current streak, percent-after-11pm, vibe distribution, sleep adherence dots, hourly density, this-week-vs-last-week. No advice, no charts that beg you to do something. It's there so you can look at it and close the tab.
+**Data.** A third tab is a quiet dashboard. Total messages, current streak, percent-after-11pm, vibe distribution, sleep adherence dots, hourly density, this-week-vs-last-week. It's there so you can look at it and close the tab.
 
 **Settings.** Default vibe, sleep windows (weeknight + weekend cutoff hours), nudge toggles, "snooze tonight" for the sleep nudge, full JSON export of everything, and a lock button that clears your session cookie.
 
-**Check-in button.** If you tap it the active persona drops a single in-character status line into the chat. No follow-up question, no "tell me more." That is the whole interaction.
-
----
-
-## The four vibes
-
-Switch any time from the chat header. Each persona has its own voice on every interaction, including the nudges. The Weaver also reads recent samples of how *you* actually write and mirrors your cadence when it ghostwrites the journal, so the entries don't feel like they came from a content farm.
-
-- `the CEO` (C) — calm, clipped, faintly amused. Directives over hand-holding.
-- `the Feral BFF` (F) — loud, no caps, will roast you with love. Minimal punctuation.
-- `the Almanac` (A) — spare, observational, steady cadence. Very few questions.
-- `the Innkeeper` (I) — soft, attentive, low-volume kindness. Hospitality cues.
+There is also a check-in button. If you tap it the active persona drops a single in-character status line into the chat. No follow-up question, no "tell me more." That is the whole interaction.
 
 ---
 
