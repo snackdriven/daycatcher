@@ -1,106 +1,99 @@
 # Project Meat-Suit
 
-You are going to text a smug AI for two weeks and at the end of it your phone will hand you a journal you didn't write, in a voice that sounds suspiciously like yours, describing a week you only half remember living.
+You are going to text a smug AI for two weeks and at the end of it the app will hand you a journal you didn't write, in a voice that sounds suspiciously like yours, describing a week you only half remember living.
 
 That's the whole pitch.
 
-It's a Telegram bot. You banter with a persona. A second mind quietly extracts signal from the chat exhaust. A third mind runs at 11:59 PM and ghostwrites the day. None of them know the others exist.
+It's a single-user web app. You banter with a persona in a browser tab. A second mind quietly extracts signal from the chat exhaust. A third mind runs at 11:59 PM and ghostwrites the day. None of them know the others exist.
 
 It's for anyone who has tried to keep a journal and bounced off it because the act of being asked to journal makes you stop wanting to.
-
-There's also a [browser companion](./web/) if you want to try the chat side without the journal side.
 
 ---
 
 ## The three minds
 
-| | Mind | Job | Sees |
-|---|---|---|---|
-| 1 | **Persona** | Banters with you in Telegram | the last 20 messages, nothing else |
-| 2 | **Scribe** | Extracts JSON from chat exhaust | raw transcripts only |
-| 3 | **Weaver** | Writes the daily journal at 23:59 | the day's structured bundle |
+|     | Mind        | Job                                       | Sees                            |
+| --- | ----------- | ----------------------------------------- | ------------------------------- |
+| 1   | **Persona** | Banters with you in the chat tab          | the last 20 messages, nothing else |
+| 2   | **Scribe**  | Extracts JSON from chat exhaust           | raw transcripts only            |
+| 3   | **Weaver**  | Writes the daily journal at 23:59         | the day's structured bundle     |
 
-The Persona has zero awareness of the journal. That is the entire architectural point. You stay relaxed because you're not writing for posterity. You're just talking and tapping. The thing that writes things down has never met you and never will.
+The Persona has zero awareness of the journal. That is the entire architectural point. You stay relaxed because you're not writing for posterity. You're just talking. The thing that writes things down has never met you and never will.
 
 ---
 
 ## What you can actually do with it
 
-**Tap.** A persistent keyboard sits under the text input with four buttons: `Overwhelmed`, `Non-Verbal`, `Safe Food Only`, `Brain Fog`. One tap logs a status event and gets one in-character reply. Smug Construct will say *"Logged: meat-sack at capacity. Reducing chatter overhead."* Quiet Guardian will say *"mm. i'll be quiet. nothing required."* No follow-up question. No "tell me more." That is the whole interaction.
+**Chat.** Top-right of the chat page is a four-letter switcher: `C / F / A / I`. Tap one to swap voices mid-thread. The new voice picks up from where the last one left off. The `?` next to the switcher opens a card explaining who's who.
 
-If you send a photo, the bot drops a short in-vibe ack and moves on. No vision pass, no storage, nothing piped to the journal. Use words.
+**Journal.** A second tab lists daily entries newest-first, with a small unread dot when the Weaver has shipped one you haven't opened. Sunday entries get a separate weekly look-back ribbon.
 
-**Paste.** Drop a URL or open a message with `fun fact` or `til` and it gets logged as a curiosity event. The Weaver treats these as legitimate micro-gratitudes worth writing about. *"I spent some time looking into 18th-century clockmaking. It was a nice break from the office noise."*
+**Data.** A third tab is a quiet dashboard. Total messages, current streak, percent-after-11pm, vibe distribution, sleep adherence dots, hourly density, this-week-vs-last-week. No advice, no charts that beg you to do something. It's there so you can look at it and close the tab.
 
-**`/check`.** A six-option poll, on demand only.
+**Settings.** Default vibe, sleep windows (weeknight + weekend cutoff hours), nudge toggles, "snooze tonight" for the sleep nudge, full JSON export of everything, and a lock button that clears your session cookie.
 
-> CURRENT MEAT-SUIT STATUS:
-> ◯ Hydrated (Liar)
-> ◯ Resembling a Raisin
-> ◯ I have forgotten I have a mouth
-> ◯ Busy (Don't perceive me)
-> ◯ Eyes are dry
-> ◯ Bladder is a problem I'm ignoring
-
-This used to fire every day at 2 PM. It doesn't anymore. A recurring six-option questionnaire is exactly the kind of intrusion this project is built to avoid.
-
-**`/week`.** Sunday at 10 PM, the weekly Weaver reads up to seven daily journals plus the structured signals and notices things you can't see from inside the week. Repeats. Adjacencies. Absences. Soft trajectories. *"Tuesday and Wednesday both ended with the kettle line. Thursday I forgot food until 8."* No advice. No charts. If the week was thin, it says so and stops.
+**Check-in button.** If you tap it the active persona drops a single in-character status line into the chat. No follow-up question, no "tell me more." That is the whole interaction.
 
 ---
 
 ## The four vibes
 
-Switch between them with `/vibe`.
+Switch any time from the chat header. Each persona has its own voice on every interaction, including the nudges. The Weaver also reads recent samples of how *you* actually write and mirrors your cadence when it ghostwrites the journal, so the entries don't feel like they came from a content farm.
 
-- `smug_construct` — dry, condescending AI. Spite-based self-care.
-- `feral_bff` — chaotic-good lowercase commiseration.
-- `stoic_mentor` — short, grounded, structural.
-- `quiet_guardian` — soft, lowercase, parallel-play.
-
-Each persona has its own voice on every interaction, including the button-tap acknowledgements. The Weaver also reads recent samples of how *you* actually write and mirrors your cadence when it ghostwrites the journal, so the entries don't feel like they came from a content farm.
+- `the CEO` (C) — calm, clipped, faintly amused. Directives over hand-holding.
+- `the Feral BFF` (F) — loud, no caps, will roast you with love. Minimal punctuation.
+- `the Almanac` (A) — spare, observational, steady cadence. Very few questions.
+- `the Innkeeper` (I) — soft, attentive, low-volume kindness. Hospitality cues.
 
 ---
 
 ## Setup
 
 ```bash
-cd meat_suit
+git clone https://github.com/snackdriven/meat-suit.git
+cd meat-suit
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cd web && npm install && npm run build && cd ..
 cp .env.example .env
-# fill in TELEGRAM_BOT_TOKEN, TELEGRAM_OWNER_ID, LLM_API_KEY
+# fill in LLM_API_KEY, optionally edit TIMEZONE and the sleep cutoffs
 python run.py
 ```
 
-Three secrets:
+Open `http://127.0.0.1:5050/`. First boot drops you on a setup screen to pick a 4-12 digit passcode. After that it's a login screen, then the chat.
 
-1. **TELEGRAM_BOT_TOKEN** from `@BotFather` → `/newbot` → copy the token.
-2. **TELEGRAM_OWNER_ID** from `@userinfobot`. This locks the bot to only you. Anyone else who finds it is silently ignored.
-3. **LLM_API_KEY**. Default config uses Gemini's free tier — grab one at <https://aistudio.google.com/apikey> with a Google account, no card required. Plenty for one-user daily use (1500 req/day on Flash).
+One secret to fill in:
 
-Want to use OpenAI, Groq, or OpenRouter instead? Same SDK, different base URL. Set `LLM_BASE_URL` and the model names in `.env`. Examples are commented in `.env.example`.
+**LLM_API_KEY.** Default config uses Gemini's free tier. Grab one at <https://aistudio.google.com/apikey> with a Google account, no card required. Plenty for one-user daily use (1500 req/day on Flash).
+
+Want OpenAI, Groq, or OpenRouter instead? Same SDK, different base URL. Set `LLM_BASE_URL` and the model names in `.env`. Examples are commented in `.env.example`.
+
+The cookie signing key (`MEAT_SUIT_COOKIE_SECRET`) auto-generates on first boot and writes itself back into `.env`. If you upgraded from a pre-passcode build, the legacy `MEAT_SUIT_WEB_KEY` is read as a fallback so your existing session stays valid.
+
+### Forgot the passcode
+
+```bash
+python -m meat_suit.reset_passcode
+```
+
+That wipes the stored hash and clears the lockout. Next boot puts you back on the setup screen.
+
+### Lockout policy
+
+Five wrong passcodes locks the app for 15 minutes. The lockout is global (single-tenant). The reset command above clears it.
 
 ---
-
-## Commands
-
-- `/start` — show vibe, list commands, bring the keyboard up
-- `/vibe` — list vibes, or `/vibe feral_bff` to switch
-- `/menu off|on` — hide or show the low-spoon keyboard
-- `/journal` — show the most recent daily entry
-- `/week` — generate or re-show the weekly look-back
-- `/check` — fire the body-check poll on demand
-- `/weave_now` — run the Scribe and Weaver on today's chat (useful for testing)
-- `/data` — show the Scribe's structured extraction (today, `yesterday`, or `week`)
-- `/sleep` — view or change sleep-nudge settings (`on` / `off` / `off forever`)
 
 ## Schedule (in your timezone)
 
 - Every 30 min — Scribe pass on new chat exhaust
-- 11:00 — text nudge
-- 17:30 — text nudge
+- 11:00 — anti-PDA nudge (skip with `NUDGES_ENABLED=0`)
+- 17:30 — anti-PDA nudge
 - 23:59 — Weaver writes and delivers the daily entry
 - 22:00 Sunday — weekly Weaver delivers the pattern paragraph
+- At each sleep cutoff — sleep nudge if you're still messaging past it
+
+Nudges land in the chat as `system_nudge` rows. They show up the next time the chat tab refreshes (the chat polls every 30s while open). No push notification, no badge. If the tab is closed you'll see them next time you open it.
 
 ---
 
@@ -108,67 +101,68 @@ Want to use OpenAI, Groq, or OpenRouter instead? Same SDK, different base URL. S
 
 The Persona gets a small time note on every reply: what day it is, what part of the day it is, whether it's a weekend evening, and whether you're past your sleep cutoff. It also gets told when you've been gone for several days, with explicit instructions not to greet you or ask where you went.
 
-A nightly job watches the clock. If you're still messaging past your weeknight cutoff (default 23:00) or weekend cutoff (default 01:00), the bot drops a single in-character sleep observation that you can ignore. It will not nag twice the same night.
+A nightly job watches the clock. If you're still messaging past your weeknight cutoff (default 23:00) or weekend cutoff (default 01:00), the active persona drops a single in-character sleep observation that you can ignore. It will not nag twice the same night. The "snooze tonight" button in Settings kills only that night's sleep nudge.
 
-- `/sleep` — show current settings
-- `/sleep off` — snooze tonight only
-- `/sleep off forever` — disable sleep nudges entirely
-- `/sleep on` — re-enable
-
-The Weaver also gets two small extras: a short rhythm summary of when the day's chat clustered (mostly evening, past midnight, big quiet gap), and the dates of any late-night sessions inside the week it's writing about. It uses these as texture, not as judgment.
+The Weaver also gets two small extras: a short rhythm summary of when the day's chat clustered, and the dates of any late-night sessions inside the week it's writing about. It uses these as texture, not as judgment.
 
 ---
 
 ## Privacy
 
-Everything lives in `./data/meatsuit.db`. Local SQLite, eight tables, no cloud anything.
+Everything lives in `./data/meatsuit.db`. Local SQLite, single file, no cloud anything.
 
-The bot only responds to your `TELEGRAM_OWNER_ID`. Anyone else is silently ignored, including in groups.
+The passcode is stored as an argon2id hash. The session cookie is httpOnly, signed, and expires 30 days after your last visit.
 
 The Persona only ever sees the rolling 20-message chat window. It never reads journals, signals, or polls. That part is on purpose.
 
+The full JSON export under Settings dumps everything: messages, journal, vibe history, signals, sleep events, prefs.
+
 ---
 
-## Browser companion
+## Exposing it (optional)
 
-`/web` is a browser version of just **Mind 1**. Landing page plus an interactive demo where you can switch between the four vibes and chat. Sessions are stored server-side per persona. The Scribe and Weaver only live in the python version.
+Default bind is `127.0.0.1:5050`, localhost only. If you want to reach the app from your phone or another machine, run it behind a tunnel:
 
-```bash
-cd web && npm install && npm run dev
-```
+- Cloudflare Tunnel
+- Tailscale Funnel
+- ngrok
 
-Stack: Express + Vite + React + Tailwind + SQLite, talking to any OpenAI-compatible Chat Completions endpoint (defaults to Gemini's free tier, like the python side).
+Set `WEB_BIND_HOST=0.0.0.0` and `WEB_COOKIE_SECURE=1` only when the tunnel terminates HTTPS for you. Anything else and the cookie won't make the round trip.
 
 ---
 
 ## File map
 
 ```
-meat_suit/
-├── run.py
+meat-suit/
+├── run.py                      # boots FastAPI on uvicorn
 ├── requirements.txt
 ├── .env.example
 ├── scripts/
-│   └── check_llm.py       # one-shot probe: does the LLM endpoint reply?
-├── meat_suit/             # the python bot
-│   ├── config.py          # env loader
-│   ├── db.py              # sqlite, 8 tables
-│   ├── time_ctx.py        # time + message-context notes for persona/weaver
-│   ├── nudges.py          # bait pools per persona
-│   ├── low_spoon.py       # button menu + per-persona acks
-│   ├── body_check.py      # /check poll definition
-│   ├── bot.py             # telegram handlers, jobqueue
+│   └── check_llm.py            # one-shot probe: does the LLM endpoint reply?
+├── meat_suit/                  # python backend
+│   ├── api.py                  # FastAPI app, auth + all routes + scheduler lifespan
+│   ├── config.py               # env loader
+│   ├── db.py                   # sqlite schema + helpers
+│   ├── scheduler.py            # APScheduler jobs (Scribe / Weaver / nudges / sleep)
+│   ├── time_ctx.py             # time + message-context notes for persona/weaver
+│   ├── nudges.py               # bait pools per persona
+│   ├── reset_passcode.py       # CLI: wipe stored hash + lockout
 │   ├── personas/
-│   │   └── catalog.py     # 4 personas as system prompts
+│   │   └── catalog.py          # 4 personas as system prompts
 │   └── minds/
-│       ├── persona.py     # mind 1, chat + rabbit-hole-react
-│       ├── scribe.py      # mind 2, json extraction
-│       └── weaver.py      # mind 3, multi-source midnight ghostwriter
-└── web/                   # browser companion (mind 1 only)
-    ├── client/            # react frontend
-    ├── server/            # express + sqlite + persona prompts
-    └── shared/            # zod schema
+│       ├── persona.py          # mind 1, chat
+│       ├── scribe.py           # mind 2, json extraction
+│       └── weaver.py           # mind 3, midnight ghostwriter
+├── web/                        # SPA, served by FastAPI on the same origin
+│   └── client/                 # vite + react + tailwind + shadcn
+└── legacy/                     # the old telegram bot, kept for reference
+    ├── bot.py
+    ├── body_check.py
+    └── low_spoon.py
 ```
+
+The Telegram bot was the original front end. It's parked under `legacy/` and no longer wired into anything. The web app is the only entry point now.
 
 ---
 
