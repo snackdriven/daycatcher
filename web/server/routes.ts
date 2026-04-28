@@ -6,7 +6,25 @@ import { chatRequestSchema } from "@shared/schema";
 import { getPersona, PERSONA_LIST } from "./personas";
 import OpenAI from "openai";
 
-const openai = new OpenAI();
+// LLM_API_KEY is the canonical name. OPENAI_API_KEY is honored as fallback.
+// LLM_BASE_URL defaults to Gemini's free tier (1500 req/day on Flash, no card).
+// To use OpenAI proper:  LLM_BASE_URL=https://api.openai.com/v1/  + an OpenAI key.
+// To use OpenRouter:     LLM_BASE_URL=https://openrouter.ai/api/v1/  + an OR key.
+const llmApiKey = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY;
+if (!llmApiKey) {
+  console.warn(
+    "[meat-suit-web] LLM_API_KEY is unset. /api/chat will return model_unavailable until it's set. Get a free Gemini key at https://aistudio.google.com/apikey"
+  );
+}
+const llmBaseURL =
+  process.env.LLM_BASE_URL ??
+  "https://generativelanguage.googleapis.com/v1beta/openai/";
+const llmModel = process.env.LLM_MODEL ?? "gemini-2.0-flash";
+
+const openai = new OpenAI({
+  apiKey: llmApiKey ?? "missing",
+  baseURL: llmBaseURL,
+});
 
 export async function registerRoutes(
   httpServer: Server,
@@ -62,7 +80,9 @@ export async function registerRoutes(
     });
 
     const history = await storage.getMessages(sessionId);
-    // Build OpenAI Responses API input. Last ~20 turns is plenty.
+    // Last ~20 turns is plenty. Persona prompt becomes the system message;
+    // the recent conversation goes in as a single user-role block so the
+    // existing Speaker: prefix scheme still works inside it.
     const turns = history.slice(-20);
     const conversationBlock = turns
       .map((m) => {
@@ -71,31 +91,24 @@ export async function registerRoutes(
       })
       .join("\n\n");
 
-    const input = `${persona.systemPrompt}\n\n---\nConversation so far:\n\n${conversationBlock}\n\n${persona.display}:`;
-
     let reply = "";
     try {
-      const response = await openai.responses.create({
-        model: "gpt_5_1",
-        input,
+      // Chat Completions works against any OpenAI-compatible endpoint
+      // (OpenAI, Gemini's compat shim, Groq, OpenRouter, vLLM, Ollama).
+      // Responses API was OpenAI-only and Gemini's compat layer doesn't expose it.
+      const response = await openai.chat.completions.create({
+        model: llmModel,
+        messages: [
+          { role: "system", content: persona.systemPrompt },
+          {
+            role: "user",
+            content: `Conversation so far:\n\n${conversationBlock}\n\nReply as ${persona.display}.`,
+          },
+        ],
       });
-      // Extract text. The Responses API exposes output_text in the SDK.
-      // Fall back to digging through the structured output if needed.
-      reply = (response as any).output_text?.trim?.() ?? "";
-      if (!reply && Array.isArray((response as any).output)) {
-        for (const item of (response as any).output) {
-          if (item.type === "message" && Array.isArray(item.content)) {
-            for (const part of item.content) {
-              if (part.type === "output_text" && typeof part.text === "string") {
-                reply += part.text;
-              }
-            }
-          }
-        }
-        reply = reply.trim();
-      }
+      reply = response.choices[0]?.message?.content?.trim() ?? "";
     } catch (err) {
-      console.error("openai_error", err);
+      console.error("llm_error", err);
       return res.status(502).json({ error: "model_unavailable" });
     }
 

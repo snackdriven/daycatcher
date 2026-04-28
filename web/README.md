@@ -1,6 +1,6 @@
 # Meat-Suit Web
 
-Browser companion for the [Meat-Suit](../) telegram bot. Ports **Mind 1** (the persona) into a web app so you can try the chat side without setting up a bot, an OpenAI key, or a cron job.
+Browser companion for the [Meat-Suit](../) telegram bot. Ports **Mind 1** (the persona) into a web app so you can try the chat side without setting up a bot or a cron job. Default config uses Gemini's free tier so you don't need a paid LLM key either.
 
 The scribe (Mind 2) and weaver (Mind 3) only live in the python version. They need a long-running cron, a personal Telegram chat, and a stable home folder. The web version is just the part you talk to.
 
@@ -13,18 +13,20 @@ The scribe (Mind 2) and weaver (Mind 3) only live in the python version. They ne
 
 - Express + Vite + React + Tailwind + shadcn/ui
 - SQLite via better-sqlite3 + Drizzle ORM, server-side per persona
-- OpenAI Responses API for chat
+- OpenAI-compatible Chat Completions API. Defaults to Gemini, swap with two env vars.
 
 ## run locally
 
 ```bash
 npm install
+cp .env.example .env
+# fill in LLM_API_KEY (free Gemini key from https://aistudio.google.com/apikey)
 npm run dev
 ```
 
 Server starts on port 5000. Visit `/` for the landing, `/#/demo` for the chat.
 
-The chat endpoint expects the Perplexity LLM API proxy. If you're running this outside that environment, swap `process.env.OPENAI_BASE_URL` and `OPENAI_API_KEY` in `server/routes.ts` for whatever endpoint you have.
+Want a different provider? `LLM_BASE_URL` + `LLM_MODEL` in `.env` point the same OpenAI SDK at OpenAI proper, Groq, OpenRouter, or anything OpenAI-compatible. See `.env.example` for examples.
 
 ## structure
 
