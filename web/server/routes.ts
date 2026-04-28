@@ -76,7 +76,7 @@ export async function registerRoutes(
     let reply = "";
     try {
       const response = await openai.responses.create({
-        model: "gpt_5_1",
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         input,
       });
       // Extract text. The Responses API exposes output_text in the SDK.
