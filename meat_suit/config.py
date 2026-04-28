@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -36,19 +37,66 @@ def _int_in_range(name: str, default: int, lo: int, hi: int) -> int:
 
 @dataclass(frozen=True)
 class Config:
-    telegram_token: str
-    telegram_owner_id: int
+    # LLM: required for any surface to do anything useful.
     llm_api_key: str
     llm_base_url: str
     mind1_model: str
     mind2_model: str
     mind3_model: str
+
+    # Storage + locale.
     database_path: Path
     timezone: str
+
+    # Behavior switches.
     nudges_enabled: bool
     sleep_weeknight_hour: int      # 0-23, hour of day after which we'd nudge sleep
     sleep_weekend_hour: int        # 0-23, same but for Fri/Sat nights (commonly later)
     sleep_nudges_enabled: bool
+
+    # Web server.
+    web_bind_host: str             # default 127.0.0.1; set to 0.0.0.0 only behind a tunnel
+    web_port: int
+    cookie_secret: str             # signing key for the session cookie; never typed by hand
+    web_cookie_secure: bool        # True in prod (HTTPS), False on plain localhost dev
+
+
+def _generate_cookie_secret_and_persist(env_path: Path) -> str:
+    """Generate a 256-bit url-safe secret used to sign session cookies.
+
+    This is NOT a user-facing passcode. It is the cookie signing key, set
+    once on first boot and never typed. Rotating it logs everyone out, which
+    is exactly what you want after a leak.
+
+    Re-scans the .env file just before writing in case another process raced
+    us to it, or in case an older deploy used the legacy MEAT_SUIT_WEB_KEY name.
+    """
+    legacy_name = "MEAT_SUIT_WEB_KEY"
+    new_name = "MEAT_SUIT_COOKIE_SECRET"
+    if env_path.exists():
+        try:
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                for prefix in (f"{new_name}=", f"{legacy_name}="):
+                    if stripped.startswith(prefix):
+                        existing = stripped.split("=", 1)[1].strip().strip('"').strip("'")
+                        if existing:
+                            return existing
+        except OSError:
+            pass
+    secret = secrets.token_urlsafe(32)
+    try:
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        with env_path.open("a", encoding="utf-8") as fh:
+            fh.write(
+                f"\n# auto-generated on first boot; rotating logs you out\n"
+                f"{new_name}={secret}\n"
+            )
+    except OSError:
+        # Disk write failed (read-only FS, container, etc). The secret still
+        # works for this run; it just won't survive restart.
+        pass
+    return secret
 
 
 def load_config() -> Config:
@@ -75,9 +123,22 @@ def load_config() -> Config:
             "or use any OpenAI-compatible provider with LLM_BASE_URL."
         )
 
+    # Cookie signing secret: auto-generated and persisted on first boot. Reads
+    # the legacy MEAT_SUIT_WEB_KEY name as a fallback so old .env files keep
+    # working without forcing everyone to log out on upgrade.
+    cookie_secret = os.getenv("MEAT_SUIT_COOKIE_SECRET") or os.getenv("MEAT_SUIT_WEB_KEY")
+    if not cookie_secret:
+        env_path = Path(os.getenv("ENV_FILE_PATH", ".env")).expanduser().resolve()
+        cookie_secret = _generate_cookie_secret_and_persist(env_path)
+
+    web_bind_host = os.getenv("WEB_BIND_HOST", "127.0.0.1")
+    web_port = _int_in_range("WEB_PORT", 5050, 1, 65535)
+    # On localhost we serve plain HTTP, so Secure cookies wouldn't work. Behind
+    # a Cloudflare Tunnel the connection is HTTPS end-to-edge, so Secure is
+    # both safe and required.
+    web_cookie_secure = os.getenv("WEB_COOKIE_SECURE", "0") == "1"
+
     return Config(
-        telegram_token=_required("TELEGRAM_BOT_TOKEN"),
-        telegram_owner_id=int(_required("TELEGRAM_OWNER_ID")),
         llm_api_key=llm_key,
         llm_base_url=os.getenv(
             "LLM_BASE_URL",
@@ -92,4 +153,8 @@ def load_config() -> Config:
         sleep_weeknight_hour=_int_in_range("SLEEP_WEEKNIGHT_HOUR", 23, 0, 23),
         sleep_weekend_hour=_int_in_range("SLEEP_WEEKEND_HOUR", 1, 0, 23),
         sleep_nudges_enabled=os.getenv("SLEEP_NUDGES_ENABLED", "1") == "1",
+        web_bind_host=web_bind_host,
+        web_port=web_port,
+        cookie_secret=cookie_secret,
+        web_cookie_secure=web_cookie_secure,
     )
