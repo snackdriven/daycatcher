@@ -138,7 +138,8 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
         for name in (signal.SIGTERM,signal.SIGINT):
             handlers[name]=signal.getsignal(name);signal.signal(name,_termination)
     status={'state':'running','checked_at':_now(),'processing':'on-device','processed':0,
-            'delivered':0,'pending':0,'review_required':0,'withheld':0,'batches':0}
+            'delivered':0,'pending':0,'review_required':0,'withheld':0,'batches':0,
+            'withheld_privacy':0,'withheld_duplicate':0,'withheld_semantic':0}
     def report():
         status['checked_at']=_now();_write(runtime/'status.json',status)
         return dict(status)
@@ -188,6 +189,10 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
                 result=process_export(bounded,client)
             status['batches']+=1;status['processed']+=len(batch)
             status['withheld']+=result['withheld']
+            for key in ('withheld_privacy','withheld_duplicate','withheld_semantic'):
+                count=result.get(key,0)
+                if type(count) is not int or count<0:raise LocalModelError('local_model_invalid_output')
+                status[key]+=count
             for item in batch:
                 ledger['evidence'][item['id']]={'day':selected,'revision':item['revision'],
                     'state':'withheld' if item['id'] in result['withheld_ids'] else 'processed'}

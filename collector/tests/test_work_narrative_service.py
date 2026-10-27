@@ -84,6 +84,9 @@ class WorkNarrativeServiceTests(unittest.TestCase):
         result=self.run_service(publish=True,gh_path='/synthetic/gh')
         self.assertEqual(result['state'],'idle');self.publisher_factory.assert_not_called()
         self.assertEqual(result['withheld'],1)
+        self.assertEqual(result['withheld_privacy'],0)
+        self.assertEqual(result['withheld_duplicate'],0)
+        self.assertEqual(result['withheld_semantic'],1)
         self.assertNotIn('PRIVATE_WORK_NAME',json.dumps(result))
         self.assertNotIn('a'*64,json.dumps(result))
         self.assertNotIn('covering testing',json.dumps(result))
@@ -141,6 +144,13 @@ class WorkNarrativeServiceTests(unittest.TestCase):
         self.assertEqual(result['state'],'error')
         self.assertEqual(result['error_code'],'local_model_extraction_unknown_support')
         self.assertNotIn('PRIVATE_SECRET',json.dumps(result));self.assertNotIn('hallucinated-id',json.dumps(result))
+    def test_legacy_fake_processor_missing_withholding_counters_defaults_zero(self):
+        result=service.process_export(self.export,Client())
+        keys=('withheld_privacy','withheld_duplicate','withheld_semantic')
+        for key in keys:result.pop(key)
+        with patch.object(service,'process_export',return_value=result):status=self.run_service()
+        self.assertEqual(status['state'],'preview')
+        self.assertTrue(all(status[key]==0 for key in keys))
     def test_more_than_two_batches_is_pending_and_max_five_per_batch(self):
         base=self.export['evidence'][0]
         self.export['evidence']=[dict(base,id=f'{n:064x}',revision=f'{n+100:064x}') for n in range(1,13)]

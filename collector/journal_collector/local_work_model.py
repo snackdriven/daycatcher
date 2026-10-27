@@ -30,7 +30,8 @@ _OUTPUT_REASONS={
 for _reasons in _OUTPUT_REASONS.values():
     _reasons.update({'invalid_json','response_shape','incomplete_response','tool_call'})
 STAGED_OUTPUT_ERRORS=frozenset(f'local_model_{stage}_{reason}'
-    for stage,reasons in _OUTPUT_REASONS.items() for reason in reasons)
+    for stage,reasons in _OUTPUT_REASONS.items() for reason in reasons)|{
+        'local_model_handoff_invalid_evidence','local_model_handoff_candidate_validation','local_model_handoff_build'}
 
 
 class LocalModelError(ValueError):
@@ -270,6 +271,20 @@ def _stage_chat(client,stage,instructions,payload,schema):
         raise
 
 
+def _withheld_counts():return {'withheld_privacy':0,'withheld_duplicate':0,'withheld_semantic':0}
+
+
+def _reviewed_result(day,approved,withheld,evidence_export,empty_review,withheld_counts):
+    try:review=dict(empty_review,approved=[review_digest(day,item,evidence_export) for item in approved])
+    except WorkMomentError:raise LocalModelError('local_model_handoff_candidate_validation') from None
+    try:handoff=build_handoff(day,approved,evidence_export,review)
+    except WorkMomentError:raise LocalModelError('local_model_handoff_build') from None
+    approved_ids={key for item in approved for key in item['evidence_ids']}
+    withheld_ids={key for item in withheld for key in item['evidence_ids']}-approved_ids
+    return {'handoff':handoff,'withheld':len(withheld),**withheld_counts,
+            'approved_ids':sorted(approved_ids),'withheld_ids':sorted(withheld_ids)}
+
+
 def process_export(evidence_export,client):
     """Two bounded local calls; return only approved transferable candidates."""
     try:
@@ -278,8 +293,9 @@ def process_export(evidence_export,client):
                 or sum(len(item['text']) for item in items)>MAX_CHARS):raise LocalModelError('local_model_batch_bounds')
         # Reuse strict export validation even before any source text is sent.
         empty_review={'processing':'on-device','privacy_reviewed':True,'grounding_reviewed':True,'approved':[]}
-        empty=build_handoff(day,[],evidence_export,empty_review)
-        if not items:return {'handoff':empty,'withheld':0,'approved_ids':[],'withheld_ids':[]}
+        try:empty=build_handoff(day,[],evidence_export,empty_review)
+        except WorkMomentError:raise LocalModelError('local_model_handoff_invalid_evidence') from None
+        if not items:return {'handoff':empty,'withheld':0,'approved_ids':[],'withheld_ids':[],**_withheld_counts()}
         aliases={f'm{i+1}':item for i,item in enumerate(items)}
         messages=[{'id':alias,'text':item['text']} for alias,item in aliases.items()]
         extraction_schema=copy.deepcopy(_EXTRACT)
@@ -306,9 +322,32 @@ def process_export(evidence_export,client):
             if len(set(item['evidence_ids']))!=len(item['evidence_ids']):
                 raise LocalModelError('local_model_extraction_duplicate_support')
             candidates.append(dict(item,evidence_ids=[aliases[key]['id'] for key in item['evidence_ids']]))
-        if not candidates:return {'handoff':empty,'withheld':0,'approved_ids':[],'withheld_ids':[]}
+        if not candidates:return {'handoff':empty,'withheld':0,'approved_ids':[],'withheld_ids':[],**_withheld_counts()}
+        # A malformed privacy shape must not poison otherwise useful evidence.
+        # Preserve exact candidate bytes: abstain, never trim or rewrite them.
+        counts={}
+        for item in candidates:
+            episode=tuple(sorted(item['evidence_ids']));counts[episode]=counts.get(episode,0)+1
+        retained=[];retained_aliases=[];withheld=[];withheld_counts=_withheld_counts()
+        for i,item in enumerate(candidates):
+            privacy_invalid=False
+            try:review_digest(day,item,evidence_export)
+            except WorkMomentError as error:
+                if error.code=='work_privacy_review_required':privacy_invalid=True
+                else:raise LocalModelError('local_model_handoff_candidate_validation') from None
+            # Multiple wordings for identical support are ambiguous episodes.
+            # Withhold all of them rather than selecting or concatenating one.
+            if privacy_invalid:
+                withheld.append(item);withheld_counts['withheld_privacy']+=1
+            elif counts[tuple(sorted(item['evidence_ids']))]>1:
+                withheld.append(item)
+                withheld_counts['withheld_duplicate']+=1
+            else:
+                retained.append(item);retained_aliases.append(output['moments'][i]['evidence_ids'])
+        candidates=retained
+        if not candidates:return _reviewed_result(day,[],withheld,evidence_export,empty_review,withheld_counts)
         review_input={'messages':messages,'candidates':[{'id':f'c{i+1}','text':item['text'],'kind':item['kind'],
-            'evidence_ids':output['moments'][i]['evidence_ids']}
+            'evidence_ids':retained_aliases[i]}
             for i,item in enumerate(candidates)]}
         review_schema=copy.deepcopy(_REVIEW)
         review_items=review_schema['properties']['reviews']
@@ -319,7 +358,7 @@ def process_export(evidence_export,client):
             raise LocalModelError('local_model_review_schema')
         if type(decisions['reviews']) is not list or len(decisions['reviews'])!=len(candidates):
             raise LocalModelError('local_model_review_count')
-        known={f'c{i+1}':item for i,item in enumerate(candidates)};approved=[];withheld=[];seen=set()
+        known={f'c{i+1}':item for i,item in enumerate(candidates)};approved=[];seen=set()
         for verdict in decisions['reviews']:
             if type(verdict) is not dict or set(verdict)!={'candidate','privacy_safe','grounded'}:
                 raise LocalModelError('local_model_review_candidate_shape')
@@ -330,12 +369,11 @@ def process_export(evidence_export,client):
                 raise LocalModelError('local_model_review_boolean')
             seen.add(verdict['candidate'])
             if verdict['privacy_safe'] and verdict['grounded']:approved.append(known[verdict['candidate']])
-            else:withheld.append(known[verdict['candidate']])
-        review=dict(empty_review,approved=[review_digest(day,item,evidence_export) for item in approved])
-        return {'handoff':build_handoff(day,approved,evidence_export,review),
-                'withheld':len(withheld),
-                'approved_ids':sorted({key for item in approved for key in item['evidence_ids']}),
-                'withheld_ids':sorted({key for item in withheld for key in item['evidence_ids']})}
+            else:
+                withheld.append(known[verdict['candidate']]);withheld_counts['withheld_semantic']+=1
+        return _reviewed_result(day,approved,withheld,evidence_export,empty_review,withheld_counts)
     except LocalModelError:raise
-    except (WorkMomentError,ValueError,TypeError,KeyError,OverflowError):
+    except WorkMomentError:
+        raise LocalModelError('local_model_handoff_build') from None
+    except (ValueError,TypeError,KeyError,OverflowError):
         raise LocalModelError('local_model_review_required') from None
