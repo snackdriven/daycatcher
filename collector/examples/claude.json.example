@@ -1,0 +1,1 @@
+{"data_dir":"ABSOLUTE_RUNTIME","db":"ABSOLUTE_RUNTIME/collector.sqlite3","package_root":"ABSOLUTE_CHECKOUT/collector","profile_dir":"ABSOLUTE_PRIVATE_PROFILE","python":"ABSOLUTE_VENV_PYTHON","partition":"persist:daycatcher","poll_seconds":60,"max_pages":5,"max_conversations":100,"since":"2026-01-01T00:00:00+00:00"}

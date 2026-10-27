@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-journal-collector"
+version = "0.1.0"
+description = "Durable local collection of Claude and Codex conversations"
+requires-python = ">=3.11"
+dependencies = ["tzdata==2026.5; sys_platform == 'win32'"]
+
+[project.scripts]
+journal-collector = "journal_collector.cli:main"
+
+[tool.setuptools]
+py-modules = ["manage", "startup", "summary_service", "personal_summary_service", "import_chatgpt_native", "pull_dot_handoff", "native_chatgpt_plan"]
+
+[tool.setuptools.packages.find]
+include = ["journal_collector*"]

@@ -1,0 +1,1 @@
+{"data_dir":"ABSOLUTE_RUNTIME","source_db":"ABSOLUTE_RUNTIME/collector.sqlite3","queue_db":"ABSOLUTE_RUNTIME/work-summary.sqlite3","gh_path":"ABSOLUTE_GH_EXECUTABLE","repository":"snackdriven/day-crumbs","branch":"main","enabled":false,"limit":500,"max_publish":20}

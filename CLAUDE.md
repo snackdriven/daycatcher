@@ -4,9 +4,27 @@ Operational notes for Claude Code working in this repo. Read once at session sta
 
 ## What this is
 
-Single-user passive-data journaling app. Four-AI-voice chat tab on the front, two background programs that turn the chat into structured data and a daily/weekly journal. FastAPI + SQLite backend, Vite/React/Tailwind/shadcn SPA, served from the same origin. Local-first, no cloud.
+Daycatcher is a single-user passive conversation journal. `collector/` contains the working local Codex/Claude Code readers, optional regular Claude Electron bridge, native ChatGPT import adapter, Dot fixed-summary receiver, and separate fixed-label journal publishers. Local collection needs no model API key. Publishing is pinned to the owner's private `snackdriven/day-crumbs` repository; arbitrary destinations are rejected. ChatGPT reads require a separately configured Codex app scheduled agent. Dot's source-side producer is separate. Muse is unconnected.
 
-`README.md` is the human-facing tour. `WEB_APP_DESIGN.md` is the locked design doc.
+The older four-voice FastAPI/SQLite and Vite/React web prototype remains at the repo root. The stack, three-minds constraints and web commands below apply to that prototype. `README.md` is the human-facing tour; `collector/README.md` is the collector runbook; `docs/web-prototype.md` and `WEB_APP_DESIGN.md` describe the prototype.
+
+## Collector work
+
+- Keep runtime databases, raw transcripts, source IDs, native tool pages, account profiles, cookies and receipts outside this checkout. Commit only source and synthetic examples. Do not copy deployment acceptance reports or machine-bound configs into public docs.
+- Collection and journal delivery have separate stop controls. Background workers never open a login window; interactive Claude sign-in is an explicit user step with a separate private Electron profile.
+- Installers must preserve ownership checks and absolute runtime bindings. macOS installers copy source files into a private code tree; maintain their copy manifests when adding dependencies. Summary installation stays disabled until an explicit start. Preserve queue receipts and deleted-block intent.
+- Verify source timestamp, authorship and incomplete-content handling before claiming coverage. Fixed topics do not establish task completion. Programmatic tests do not prove live account reads or native scheduler operation.
+
+From `collector/`, install with `python -m pip install -e .`, then run:
+
+```sh
+python -m unittest discover -s tests
+python -m unittest discover -s macos -p 'test_*.py'
+npm install
+npm test
+```
+
+Tests use synthetic fixtures. Live tasks, private account reads and publishing are separate operations; do not install or start them as a side effect of tests. See the collector guide for optional Windows timezone-test setup and native installation commands.
 
 ## Stack
 
@@ -64,7 +82,7 @@ python scripts/check_llm.py
 python -m meat_suit.reset_passcode
 ```
 
-There is no test suite. Do not run `pytest`. After any backend change, the smoke check is: build the SPA, start `run.py`, log in, send a message to each of the four personas, confirm a reply.
+The web prototype has no dedicated test suite. Its backend smoke check is: build the SPA, start `run.py`, log in, send a message to each of the four personas, confirm a reply. The collector has its own unittest and Node test suites above.
 
 ## Conventions
 
@@ -94,7 +112,7 @@ There is no test suite. Do not run `pytest`. After any backend change, the smoke
 ## Git
 
 - Conventional commits: `docs(readme): …`, `feat(web): …`, `fix(scheduler): …`.
-- Push to `main` is fine; this is a single-user private repo. Use `--no-ff` for feature-branch merges if a branch was created.
+- Follow the user's current authorization for commits, pushes and PRs. Do not infer publication permission from this being a single-user project. Use `--no-ff` for feature-branch merges if a branch was created.
 - Commit messages follow the prose rules above.
 - For `git push`, use the `gh` CLI or `git push` with the `github` credentials preset. Do not run `gh auth status`.
 
@@ -117,4 +135,4 @@ legacy/                     dead code, do not touch
 
 ## When unsure
 
-Read `README.md` for product framing, `WEB_APP_DESIGN.md` for locked design decisions, and the file in question. Do not invent features that contradict either.
+Read `README.md` for product framing, `collector/README.md` for collector behavior, `WEB_APP_DESIGN.md` for prototype design decisions, and the file in question. Keep the two runtimes distinct when applying architecture rules.

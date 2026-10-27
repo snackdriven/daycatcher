@@ -50,9 +50,11 @@ Separate work and personal receipts prevent duplicate paragraphs. Changes to imp
 
 ## What's in this repo
 
-Daycatcher started as a four-voice chat app with a nightly journal writer. That original FastAPI/SQLite and Vite/React prototype is what's checked in here today.
+The working multi-source collector is in [`collector/`](collector/README.md), with a local CLI, the optional Claude account bridge, background installers and synthetic tests. The [setup guide](collector/README.md#fresh-local-setup) starts local collection from a fresh clone. Cloning alone starts nothing. No model API key is needed for that path.
 
-The working multi-source collector and Mac deployment currently live separately. **Cloning this repository does not install the collector or its scheduled jobs.** Packaging that setup into the repo is still to do.
+Source sign-ins and scheduled jobs need their own setup. Journal delivery is separate and still pinned to the owner's private `snackdriven/day-crumbs` repository. ChatGPT needs the Codex app integration; Dot needs a separately configured source producer. Their adapters are included, with those limits spelled out in the guide. Muse remains unconnected.
+
+Daycatcher started as a four-voice chat app with a nightly journal writer. That original FastAPI/SQLite and Vite/React prototype remains here alongside the collector.
 
 The [web prototype guide](docs/web-prototype.md) preserves its setup, commands and schedules. The [web design spec](WEB_APP_DESIGN.md) covers that earlier architecture. The prototype uses its own model endpoint and credentials; those aren't requirements of the current collector.
 

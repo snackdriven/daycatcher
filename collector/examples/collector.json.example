@@ -1,0 +1,1 @@
+{"version":1,"data_dir":"ABSOLUTE_RUNTIME","db":"ABSOLUTE_RUNTIME/collector.sqlite3","poll_seconds":15,"local":{"codex_roots":null,"claude_roots":null,"since":"2026-01-01T00:00:00+00:00","max_bytes":16777216},"claude":{"enabled":false,"electron":"ABSOLUTE_ELECTRON_EXECUTABLE","config":"ABSOLUTE_RUNTIME/claude.json"}}

@@ -1,0 +1,8 @@
+{
+  "name": "journal-collector-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent local conversation collection, no model calls",
+  "scripts": {"test": "node --test claude_bridge/*.test.cjs"},
+  "devDependencies": {"electron": "45.0.0"}
+}
