@@ -4,6 +4,7 @@ Never attaches to an existing server or downloads a model. Raw data is sent only
 after local GGUF weights and the selected on-device runtime are verified. Local
 semantic review is fallible; a positive verdict is not a zero-leak guarantee.
 """
+import copy
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,13 @@ MAX_MESSAGES=5
 MAX_CHARS=12000
 MAX_RESPONSE=128*1024
 MAX_PAYLOAD_BYTES=24*1024
+_OUTPUT_REASONS={
+    'extraction':{'schema','count','candidate_shape','text_bounds','kind','support_shape','unknown_support','duplicate_support'},
+    'review':{'schema','count','candidate_shape','unknown_candidate','duplicate_candidate','boolean'}}
+for _reasons in _OUTPUT_REASONS.values():
+    _reasons.update({'invalid_json','response_shape','incomplete_response','tool_call'})
+STAGED_OUTPUT_ERRORS=frozenset(f'local_model_{stage}_{reason}'
+    for stage,reasons in _OUTPUT_REASONS.items() for reason in reasons)
 
 
 class LocalModelError(ValueError):
@@ -203,17 +211,19 @@ class OllamaSession:
 
     def chat(self,instructions,payload,schema):
         if not self.local_verified:raise LocalModelError('local_model_unverified')
+        schema_text=json.dumps(schema,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False)
         request={'model':self.model,'stream':False,'format':schema,'keep_alive':0,
             'options':{'temperature':0,'num_predict':1600,'num_ctx':8192},
-            'messages':[{'role':'system','content':instructions},
+            'messages':[{'role':'system','content':instructions+'\nRequired JSON schema:\n'+schema_text},
                         {'role':'user','content':json.dumps(payload,ensure_ascii=False,allow_nan=False)}]}
         if 'thinking' in self.capabilities:request['think']=False
-        result=self._request('/api/chat',request)
+        result=self._request('/api/chat',_bounded_payload(request))
         message=result.get('message')
-        if (result.get('done') is not True or type(message) is not dict or message.get('role')!='assistant'
-                or message.get('tool_calls') or type(message.get('content')) is not str
-                or len(message['content'].encode('utf-8'))>MAX_RESPONSE):
-            raise LocalModelError()
+        if result.get('done') is not True:raise LocalModelError('local_model_incomplete_response')
+        if type(message) is not dict or message.get('role')!='assistant':raise LocalModelError('local_model_response_shape')
+        if message.get('tool_calls'):raise LocalModelError('local_model_tool_call')
+        if (type(message.get('content')) is not str or len(message['content'].encode('utf-8'))>MAX_RESPONSE):
+            raise LocalModelError('local_model_response_shape')
         return _decode(message['content'])
 
 
@@ -251,6 +261,15 @@ _REVIEW_INSTRUCTIONS=(
     'If uncertain use false. Return exact JSON schema only, no explanations or tools.')
 
 
+def _stage_chat(client,stage,instructions,payload,schema):
+    try:return client.chat(instructions,payload,schema)
+    except LocalModelError as error:
+        reasons={'local_model_invalid_output':'invalid_json','local_model_response_shape':'response_shape',
+                 'local_model_incomplete_response':'incomplete_response','local_model_tool_call':'tool_call'}
+        if error.code in reasons:raise LocalModelError(f'local_model_{stage}_{reasons[error.code]}') from None
+        raise
+
+
 def process_export(evidence_export,client):
     """Two bounded local calls; return only approved transferable candidates."""
     try:
@@ -263,31 +282,52 @@ def process_export(evidence_export,client):
         if not items:return {'handoff':empty,'withheld':0,'approved_ids':[],'withheld_ids':[]}
         aliases={f'm{i+1}':item for i,item in enumerate(items)}
         messages=[{'id':alias,'text':item['text']} for alias,item in aliases.items()]
-        output=client.chat(_INSTRUCTIONS,_bounded_payload({'messages':messages}),_EXTRACT)
-        if type(output) is not dict or set(output)!={'moments'} or type(output['moments']) is not list or len(output['moments'])>5:
-            raise LocalModelError()
+        extraction_schema=copy.deepcopy(_EXTRACT)
+        support_schema=extraction_schema['properties']['moments']['items']['properties']['evidence_ids']
+        support_schema.update(maxItems=len(aliases),uniqueItems=True)
+        support_schema['items']['enum']=list(aliases)
+        output=_stage_chat(client,'extraction',_INSTRUCTIONS,_bounded_payload({'messages':messages}),extraction_schema)
+        if type(output) is not dict or set(output)!={'moments'}:
+            raise LocalModelError('local_model_extraction_schema')
+        if type(output['moments']) is not list or len(output['moments'])>5:
+            raise LocalModelError('local_model_extraction_count')
         candidates=[]
         for item in output['moments']:
-            if (type(item) is not dict or set(item)!={'text','kind','evidence_ids'}
-                    or type(item['text']) is not str or not 1<=len(item['text'])<=600
-                    or type(item['kind']) is not str or item['kind'] not in KINDS
-                    or type(item['evidence_ids']) is not list or not item['evidence_ids'] or len(item['evidence_ids'])>5
-                    or any(type(key) is not str or key not in aliases for key in item['evidence_ids'])
-                    or len(set(item['evidence_ids']))!=len(item['evidence_ids'])):raise LocalModelError()
+            if type(item) is not dict or set(item)!={'text','kind','evidence_ids'}:
+                raise LocalModelError('local_model_extraction_candidate_shape')
+            if type(item['text']) is not str or not 1<=len(item['text'])<=600:
+                raise LocalModelError('local_model_extraction_text_bounds')
+            if type(item['kind']) is not str or item['kind'] not in KINDS:
+                raise LocalModelError('local_model_extraction_kind')
+            if type(item['evidence_ids']) is not list or not item['evidence_ids'] or len(item['evidence_ids'])>len(aliases):
+                raise LocalModelError('local_model_extraction_support_shape')
+            if any(type(key) is not str or key not in aliases for key in item['evidence_ids']):
+                raise LocalModelError('local_model_extraction_unknown_support')
+            if len(set(item['evidence_ids']))!=len(item['evidence_ids']):
+                raise LocalModelError('local_model_extraction_duplicate_support')
             candidates.append(dict(item,evidence_ids=[aliases[key]['id'] for key in item['evidence_ids']]))
         if not candidates:return {'handoff':empty,'withheld':0,'approved_ids':[],'withheld_ids':[]}
         review_input={'messages':messages,'candidates':[{'id':f'c{i+1}','text':item['text'],'kind':item['kind'],
             'evidence_ids':output['moments'][i]['evidence_ids']}
             for i,item in enumerate(candidates)]}
-        decisions=client.chat(_REVIEW_INSTRUCTIONS,_bounded_payload(review_input),_REVIEW)
-        if (type(decisions) is not dict or set(decisions)!={'reviews'} or type(decisions['reviews']) is not list
-                or len(decisions['reviews'])!=len(candidates)):raise LocalModelError()
+        review_schema=copy.deepcopy(_REVIEW)
+        review_items=review_schema['properties']['reviews']
+        review_items.update(minItems=len(candidates),maxItems=len(candidates))
+        review_items['items']['properties']['candidate']['enum']=[f'c{i+1}' for i in range(len(candidates))]
+        decisions=_stage_chat(client,'review',_REVIEW_INSTRUCTIONS,_bounded_payload(review_input),review_schema)
+        if type(decisions) is not dict or set(decisions)!={'reviews'}:
+            raise LocalModelError('local_model_review_schema')
+        if type(decisions['reviews']) is not list or len(decisions['reviews'])!=len(candidates):
+            raise LocalModelError('local_model_review_count')
         known={f'c{i+1}':item for i,item in enumerate(candidates)};approved=[];withheld=[];seen=set()
         for verdict in decisions['reviews']:
-            if (type(verdict) is not dict or set(verdict)!={'candidate','privacy_safe','grounded'}
-                    or type(verdict['candidate']) is not str or verdict['candidate'] not in known
-                    or verdict['candidate'] in seen or type(verdict['privacy_safe']) is not bool
-                    or type(verdict['grounded']) is not bool):raise LocalModelError()
+            if type(verdict) is not dict or set(verdict)!={'candidate','privacy_safe','grounded'}:
+                raise LocalModelError('local_model_review_candidate_shape')
+            if type(verdict['candidate']) is not str or verdict['candidate'] not in known:
+                raise LocalModelError('local_model_review_unknown_candidate')
+            if verdict['candidate'] in seen:raise LocalModelError('local_model_review_duplicate_candidate')
+            if type(verdict['privacy_safe']) is not bool or type(verdict['grounded']) is not bool:
+                raise LocalModelError('local_model_review_boolean')
             seen.add(verdict['candidate'])
             if verdict['privacy_safe'] and verdict['grounded']:approved.append(known[verdict['candidate']])
             else:withheld.append(known[verdict['candidate']])

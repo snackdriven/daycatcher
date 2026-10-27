@@ -134,6 +134,13 @@ class WorkNarrativeServiceTests(unittest.TestCase):
             self.assertEqual(service.main([]),1)
         self.assertEqual(json.loads(output.getvalue())['error_code'],'work_requires_macos')
         config.assert_not_called();execute.assert_not_called();verify.assert_not_called()
+    def test_malformed_model_output_reports_fixed_stage_reason_only(self):
+        self.client.chat=Mock(return_value={'moments':[{'text':'PRIVATE_SECRET','kind':'discussion',
+                                                       'evidence_ids':['hallucinated-id']}]})
+        result=self.run_service()
+        self.assertEqual(result['state'],'error')
+        self.assertEqual(result['error_code'],'local_model_extraction_unknown_support')
+        self.assertNotIn('PRIVATE_SECRET',json.dumps(result));self.assertNotIn('hallucinated-id',json.dumps(result))
     def test_more_than_two_batches_is_pending_and_max_five_per_batch(self):
         base=self.export['evidence'][0]
         self.export['evidence']=[dict(base,id=f'{n:064x}',revision=f'{n+100:064x}') for n in range(1,13)]

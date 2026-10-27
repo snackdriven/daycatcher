@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from journal_collector.cli import atomic_json
 from journal_collector.runtime import worker_lock
 from journal_collector.narrative_evidence import export_day, day_window
-from journal_collector.local_work_model import OllamaSession, LocalModelError, LocalStop, process_export, MAX_MESSAGES, MAX_CHARS
+from journal_collector.local_work_model import OllamaSession, LocalModelError, LocalStop, process_export, MAX_MESSAGES, MAX_CHARS, STAGED_OUTPUT_ERRORS
 from journal_collector.work_moments import WorkMomentPublisher, validate_handoff, WorkMomentError
 from journal_collector.summary_publish import PublishError, GitHubTransport
 
@@ -218,7 +218,7 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
         codes={'network','auth','privacy','conflict','verification','review_required',
                'local_model_unverified','local_model_unavailable','local_model_request_failed',
                'local_model_invalid_output','local_model_batch_bounds','local_model_review_required',
-               'local_model_timeout','local_model_response_too_large','local_model_redirect_refused'}
+               'local_model_timeout','local_model_response_too_large','local_model_redirect_refused'}|STAGED_OUTPUT_ERRORS
         code=getattr(error,'code',None)
         status.update(state='error',error_code=code if code in codes else 'work_processing_failed')
         return report()

@@ -172,3 +172,45 @@ class LocalWorkModelTests(unittest.TestCase):
             {'text':'界'*600,'kind':'discussion','evidence_ids':['m1']} for _ in range(5)]})
         with self.assertRaises(LocalModelError) as error:process_export(value,client)
         self.assertEqual(error.exception.code,'local_model_batch_bounds');self.assertEqual(client.chat.call_count,1)
+    def test_dynamic_schemas_constrain_supported_aliases_and_exact_review_ids_count(self):
+        client=Client();process_export(export(),client)
+        extract_schema=client.calls[0][2]
+        aliases=extract_schema['properties']['moments']['items']['properties']['evidence_ids']
+        self.assertEqual(aliases['items']['enum'],['m1']);self.assertIs(aliases['uniqueItems'],True)
+        reviews=client.calls[1][2]['properties']['reviews']
+        self.assertEqual(reviews['minItems'],1);self.assertEqual(reviews['maxItems'],1)
+        self.assertEqual(reviews['items']['properties']['candidate']['enum'],['c1'])
+    def test_chat_grounds_owned_schema_in_system_prompt_and_bounds_entire_request(self):
+        with tempfile.TemporaryDirectory() as temp:
+            session=OllamaSession(str(Path(temp)/'ollama'),'model:local',models_dir=Path(temp))
+            session.local_verified=True
+            session._request=Mock(return_value={'done':True,'message':{'role':'assistant','content':'{}'}})
+            schema={'type':'object','properties':{'result':{'type':'boolean'}},'required':['result']}
+            payload={'text':'UNTRUSTED_SYNTHETIC_BODY'}
+            session.chat('OWNED_INSTRUCTIONS',payload,schema)
+            request=session._request.call_args.args[1]
+            canonical=json.dumps(schema,ensure_ascii=False,sort_keys=True,separators=(',',':'))
+            self.assertTrue(request['messages'][0]['content'].startswith('OWNED_INSTRUCTIONS'))
+            self.assertIn(canonical,request['messages'][0]['content'])
+            self.assertNotIn('UNTRUSTED_SYNTHETIC_BODY',request['messages'][0]['content'])
+            self.assertEqual(request['messages'][1]['role'],'user')
+            self.assertEqual(json.loads(request['messages'][1]['content']),payload)
+            session._request.reset_mock()
+            with self.assertRaises(LocalModelError) as error:
+                session.chat('OWNED_INSTRUCTIONS',{'text':'x'*(24*1024-100)},schema)
+            self.assertEqual(error.exception.code,'local_model_batch_bounds')
+            session._request.assert_not_called()
+    def test_fixed_diagnostic_distinguishes_stage_reason_without_raw_output(self):
+        malformed=[({'moments':[{'text':'PRIVATE_SECRET','kind':'discussion','evidence_ids':['hallucinated-id']}]},
+                    None,'local_model_extraction_unknown_support'),
+                   ({'moments':[{'text':'I asked about testing.','kind':'discussion','evidence_ids':['m1']}]},
+                    {'reviews':[]},'local_model_review_count'),
+                   ({'moments':[{'text':'I asked about testing.','kind':'discussion','evidence_ids':['m1']}]},
+                    {'reviews':[{'candidate':'hallucinated-id','privacy_safe':True,'grounded':True}]},'local_model_review_unknown_candidate'),
+                   ({'moments':[{'text':'I asked about testing.','kind':'discussion','evidence_ids':['m1']}]},
+                    {'reviews':[{'candidate':'c1','privacy_safe':'PRIVATE_SECRET','grounded':True}]},'local_model_review_boolean')]
+        for first,second,code in malformed:
+            client=Client();client.chat=Mock(side_effect=[first,second])
+            with self.subTest(code=code),self.assertRaises(LocalModelError) as error:process_export(export(),client)
+            self.assertEqual(error.exception.code,code)
+            self.assertNotIn('PRIVATE_SECRET',str(error.exception));self.assertNotIn('hallucinated-id',str(error.exception))
