@@ -10,11 +10,11 @@ Daycatcher gathers conversation context from multiple assistants into a private 
 
 ## What it catches
 
-Personal Windows and a work Mac add high-level context to the same private journal.
+Personal Windows and a work Mac collect context for the same private journal. Collection, safe handoff and actual journal writing are separate steps.
 
 - **Codex and Claude Code:** hidden Python readers collect native local logs. The visible desktop apps can be closed.
 - **Regular Claude chats:** a hidden Electron bridge uses its own signed-in account session, independently of the visible Claude app. Bounded account reads and internal endpoint changes limit what it can catch.
-- **Work Mac:** local Codex and Claude Code collection, with a separate hourly journal job. Raw work transcripts stay on the Mac; only fixed context labels leave it.
+- **Work Mac:** local Codex and Claude Code collection is running. Raw work transcripts stay on the Mac. The original topic-only feed is too thin for narrative writing; a separately validated, on-device sanitized-moment handoff is included, with live setup still pending.
 - **ChatGPT:** an hourly Codex app automation reads supported user messages. Each pass lists at most 50 recent mixed chats, selects up to five ChatGPT chats and reads at most ten turns each. Assistant bodies aren't available through this path. Codex and its connected ChatGPT reader need to be available; a separate ChatGPT window isn't needed.
 - **Dot:** its source-side producer sends fixed topic fragments through private `imports/dot/v1/YYYY-MM-DD.json` files. Its first real file and journal support were verified. Dot reports its hourly schedule saved and tested; the cloud scheduler hasn't been independently inspected.
 - **Muse:** planned, still unconnected. Source access, authentication and reliable original timestamps need verification.
@@ -28,11 +28,11 @@ That's the verified setup as of October 27, 2026. Coverage is partial, including
 
 Source timestamps determine the journal day, with **03:00 as the cutoff in America/Chicago**. The conversation at 01:00 still belongs to the day you haven't gone to bed from. The calendar can cope.
 
-Local rules turn eligible messages into fixed labels; a fixed renderer adds journal context. Dot supplies dated topic fragments, so its journal day is kept without inventing individual message timestamps.
+The [narrative writer](collector/docs/narrative-writer.md) keeps specific, supported moments and turns them into a few natural paragraphs. The first personal entry has been written and checked against its human sources. Automatic native Codex writing is configured; its first scheduled execution is a separate check. Useful work moments still need the Mac handoff connected.
 
-Entries describe discussion topics, with narrow rules for directly stated human reactions when authorship and content checks support them. Dot contributes topics only. Talking about testing doesn't establish that a test passed. Assistant suggestions don't become things you supposedly did.
+Wanting to make a podcast does not become listening to one. Asking for a fix does not become finishing it. Assistant suggestions and pasted examples do not become things you supposedly did.
 
-Rich AI-written journal prose is still ahead. The current version is deliberately modest about what it knows.
+The older fixed-topic renderer remains for compatibility, with a switch to retire its entry writes. Topic fragments, including Dot's current feed, cannot supply concrete anecdotes. Exact untouched old topic blocks can be archived after real prose exists; user edits stay put.
 
 ---
 
@@ -40,9 +40,9 @@ Rich AI-written journal prose is still ahead. The current version is deliberatel
 
 The Windows collector starts after current-user sign-in. Its windowless journal job checks hourly while the PC is awake; the work Mac has its own local collector and hourly job. They don't wake sleeping machines. ChatGPT source reads have the additional Codex app dependency above.
 
-Local classification and journal rendering use fixed rules. No new model API key is needed for the collector; source logins and GitHub authentication still are. Expired sign-in needs attention; workers don't take over the desktop to log in.
+Collection makes no model calls. Narrative writing uses a separately configured native Codex agent and the existing account, without a new model API key; source logins and GitHub authentication still are. Expired sign-in needs attention; workers don't take over the desktop to log in.
 
-Raw text stays in private local databases, or source-side for Dot. The journal receives fixed context marked partial. Raw transcripts aren't published here or to the journal.
+Raw work chats remain on the Mac. Personal evidence is stored privately and supplied to the configured writer for processing; that is not on-device inference. Only grounded journal prose and approved sanitized work moments are published to the private journal. Raw transcripts aren't committed here or uploaded to that repository. Coverage diagnostics live in status files.
 
 Separate work and personal receipts prevent duplicate paragraphs. Changes to imported evidence are flagged for review instead of quietly rewriting existing journal text. Collection and publication have separate stop controls.
 

@@ -12,6 +12,7 @@ import zoneinfo
 
 import personal_summary_service as service
 from journal_collector.store import Store
+from journal_collector.runtime import worker_lock
 
 
 class FakePublisher:
@@ -73,6 +74,41 @@ class PersonalServiceTests(unittest.TestCase):
         code,output=self.run_service('--dry-run')
         self.assertEqual(code,0);self.assertEqual(json.loads(output)['state'],'preview')
         self.assertFalse(FakePublisher.items);self.assertEqual(Path(self.settings['source_db']).read_bytes(),before)
+    def test_fixed_publishing_config_defaults_true_and_requires_boolean(self):
+        self.assertIs(service.load_config(self.config)['fixed_publishing_enabled'],True)
+        for value in (None,0,1,'false',[],{}):
+            with self.subTest(value=value):
+                self.config.write_text(json.dumps(dict(self.settings,fixed_publishing_enabled=value)))
+                with self.assertRaises(ValueError): service.load_config(self.config)
+    def test_retired_publishing_keeps_dot_pull_and_leaves_source_and_queue_untouched(self):
+        self.seed(); before=Path(self.settings['source_db']).read_bytes()
+        queue_path=Path(self.settings['queue_db']); queue_path.write_bytes(b'unchanged queue receipt sentinel')
+        self.settings.update(fixed_publishing_enabled=False,dot_handoff_enabled=True)
+        self.save()
+        with patch('pull_dot_handoff.pull',return_value={'state':'idle','files':1,'new':1}) as pull, \
+             patch.object(service,'PersonalSummaryQueue') as queue, \
+             patch.object(service,'Publisher') as publisher:
+            code,output=self.run_service()
+            pull.assert_called_once()
+            queue.assert_not_called(); publisher.assert_not_called()
+        result=json.loads(output)
+        self.assertEqual(code,0); self.assertEqual(result['state'],'retired')
+        self.assertIs(result['fixed_publishing_enabled'],False)
+        self.assertEqual(result['dot_handoff'],{'state':'idle','files':1,'new':1})
+        self.assertEqual(Path(self.settings['source_db']).read_bytes(),before)
+        self.assertEqual(queue_path.read_bytes(),b'unchanged queue receipt sentinel')
+        health=json.loads((self.data/'personal-summary-status.json').read_text())
+        self.assertEqual(health['state'],'retired'); self.assertNotIn('dot_handoff',health)
+    def test_retired_mode_does_not_rewrite_busy_worker_status_after_dot_pull(self):
+        self.settings.update(fixed_publishing_enabled=False,dot_handoff_enabled=True)
+        self.save()
+        path=self.data/'personal-summary-status.json'; path.write_text('{"state":"running"}')
+        with patch('pull_dot_handoff.pull',return_value={'state':'idle'}) as pull, \
+             worker_lock(self.data/'.personal-summary-worker'):
+            code,output=self.run_service()
+            pull.assert_called_once()
+        self.assertEqual(code,0); self.assertEqual(json.loads(output)['state'],'busy')
+        self.assertEqual(json.loads(path.read_text()),{'state':'running'})
     def test_timezone_integrity_fails_closed(self):
         self.seed(); self.settings['tzdata_sha256']='0'*64;self.save()
         code,output=self.run_service()

@@ -11,7 +11,7 @@ The older four-voice FastAPI/SQLite and Vite/React web prototype remains at the 
 ## Collector work
 
 - Keep runtime databases, raw transcripts, source IDs, native tool pages, account profiles, cookies and receipts outside this checkout. Commit only source and synthetic examples. Do not copy deployment acceptance reports or machine-bound configs into public docs.
-- Collection and journal delivery have separate stop controls. Background workers never open a login window; interactive Claude sign-in is an explicit user step with a separate private Electron profile.
+- Collection and journal delivery have separate stop controls. Natural prose uses the separate narrative exporter, sanitized work handoff and native writer; fixed labels cannot establish concrete events. Preserve narrative receipt databases and exact owned spans as well as old topic receipts. Background workers never open a login window; interactive Claude sign-in is an explicit user step with a separate private Electron profile.
 - Installers must preserve ownership checks and absolute runtime bindings. macOS installers copy source files into a private code tree; maintain their copy manifests when adding dependencies. Summary installation stays disabled until an explicit start. Preserve queue receipts and deleted-block intent.
 - Verify source timestamp, authorship and incomplete-content handling before claiming coverage. Fixed topics do not establish task completion. Programmatic tests do not prove live account reads or native scheduler operation.
 

@@ -26,6 +26,9 @@ def load_config(path):
         if Path(value[key]).resolve()!=data/name: raise ValueError('runtime_binding')
     if value.get('repository')!='snackdriven/day-crumbs' or value.get('branch')!='main': raise ValueError('destination')
     if type(value.get('enabled')) is not bool: raise ValueError('enabled')
+    fixed_enabled=value.get('fixed_publishing_enabled',True)
+    if type(fixed_enabled) is not bool: raise ValueError('fixed_publishing_enabled')
+    value['fixed_publishing_enabled']=fixed_enabled
     dot_enabled=value.get('dot_handoff_enabled',False)
     dot_days=value.get('dot_handoff_days',3)
     if type(dot_enabled) is not bool: raise ValueError('dot_handoff_enabled')

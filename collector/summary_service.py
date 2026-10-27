@@ -27,6 +27,9 @@ def load_config(path):
     if value.get('repository','snackdriven/day-crumbs') != 'snackdriven/day-crumbs' or value.get('branch','main') != 'main':
         raise ValueError('destination_not_allowed')
     if type(value.get('enabled',False)) is not bool: raise ValueError('enabled_boolean_required')
+    fixed_enabled=value.get('fixed_publishing_enabled',True)
+    if type(fixed_enabled) is not bool: raise ValueError('fixed_publishing_enabled_boolean_required')
+    value['fixed_publishing_enabled']=fixed_enabled
     for key, default, maximum in [('limit',500,500),('max_publish',20,20)]:
         item=value.get(key,default)
         if type(item) is not int or not 1 <= item <= maximum: raise ValueError('invalid_limit')
@@ -71,6 +74,10 @@ def execute(config, *, dry_run=False, runtime=None):
     def report():
         health['checked_at']=now(); atomic_json(data/bindings['status'],health)
     try:
+        if config.get('enabled') is True and config.get('fixed_publishing_enabled',True) is False:
+            health={'state':'retired','enabled':True,'fixed_publishing_enabled':False}
+            report()
+            return health
         report()
         with bindings['queue'](config['source_db'],config['queue_db']) as queue:
             preparation=queue.prepare(limit=config['limit'])

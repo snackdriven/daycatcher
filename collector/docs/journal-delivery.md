@@ -1,5 +1,7 @@
 # Journal delivery
 
+For actual natural paragraphs, use the [narrative writer](narrative-writer.md). The configuration below describes the older fixed-topic transport. Set `fixed_publishing_enabled:false` to retire that entry sink while retaining its queues and receipts; personal Dot pulling and raw collection are independent.
+
 Collection runs without GitHub. Delivery is a separate optional job that classifies retained evidence locally and sends fixed labels to a private journal. No model API key is used. The destination is pinned in code to `snackdriven/day-crumbs`, branch `main`. These publishing controls are for that repository's owner. Changing a config field cannot redirect delivery; another owner must deliberately adapt the publisher and journal layout before enabling it.
 
 Use an installed `gh` CLI authenticated as the intended owner with private repository access and push permission. The publisher verifies privacy and uses compare-and-swap updates. Authentication and transport failures block delivery and appear as fixed status codes. No credentials belong in JSON templates or this repo.

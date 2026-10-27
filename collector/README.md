@@ -1,8 +1,17 @@
 # Daycatcher collector
 
-The working collector lives here. It reads local Codex and Claude Code logs into a private SQLite store. An optional Electron worker reads regular Claude chats through its own signed-in session. Collection and fixed-label journal rendering make no model calls and need no model API key.
+The working collector lives here. It reads local Codex and Claude Code logs into a private SQLite store. An optional Electron worker reads regular Claude chats through its own signed-in session. Collection makes no model calls. Real prose uses the separately configured [native journal writer](docs/narrative-writer.md); the Python evidence and publishing tools themselves make no model calls.
 
 Cloning does not start anything. Start with local collection below; add account readers and publishing separately. The original web app has its own [guide](../docs/web-prototype.md).
+
+
+## Natural journal prose
+
+Use the [native writer runbook](docs/narrative-writer.md) for strict user-evidence export, sanitized work moments, model writing and guarded narrative delivery. A fixed topic list is not a narrative input with recoverable details. New narrative modules are separate from legacy topic queues; keep both sets of receipts across upgrades.
+
+`export_narrative_evidence.py` and `prepare_narrative.py` save source material only inside the private runtime. `publish_narrative.py` previews locally unless `--publish` and a persistent receipt path are supplied. A successful preview, handoff upload or enabled schedule is not proof that a real combined entry was written.
+
+Set `fixed_publishing_enabled` to `false` in the existing work or personal summary config to retire only the old topic-to-entry sink. It defaults to `true` for compatibility. Source collection and stored delivery receipts remain unchanged; personal Dot pulling can continue. Work descriptions require actual on-device semantic privacy and grounding review before leaving the Mac. The source contract and validator do not run that inference for you.
 
 ## Fresh local setup
 

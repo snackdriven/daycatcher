@@ -66,6 +66,40 @@ class SummaryServiceTests(unittest.TestCase):
         Queue.items=[{'fragment_id':'a'*32,'day':'2026-10-27','facts':['topic_testing'],'coverage':'partial'}]
         self.assertEqual(self.run_service()[0],0)
         self.assertEqual(Queue.acknowledgements,['a'*32])
+    def test_retired_fixed_publishing_never_opens_queue_or_publisher(self):
+        self.settings['fixed_publishing_enabled']=False
+        self.config.write_text(json.dumps(self.settings))
+        for extra in [(),('--dry-run',)]:
+            with self.subTest(extra=extra), \
+                 patch.object(summary_service,'SummaryQueue') as queue, \
+                 patch.object(summary_service,'Publisher') as publisher:
+                code,output=self.run_service(*extra)
+                self.assertEqual(code,0)
+                result=json.loads(output)
+                self.assertEqual(result['state'],'retired')
+                self.assertIs(result['enabled'],True)
+                self.assertIs(result['fixed_publishing_enabled'],False)
+                self.assertIn('checked_at',result)
+                self.assertEqual(json.loads((self.data/'summary-status.json').read_text()),result)
+                queue.assert_not_called(); publisher.assert_not_called()
+    def test_fixed_publishing_config_defaults_true_and_requires_boolean(self):
+        self.assertIs(summary_service.load_config(self.config)['fixed_publishing_enabled'],True)
+        for value in (None,0,1,'false',[],{}):
+            with self.subTest(value=value):
+                self.config.write_text(json.dumps(dict(self.settings,fixed_publishing_enabled=value)))
+                with self.assertRaises(ValueError): summary_service.load_config(self.config)
+    def test_retired_mode_preserves_stop_and_busy_health(self):
+        self.settings['fixed_publishing_enabled']=False
+        self.config.write_text(json.dumps(self.settings))
+        path=self.data/'summary-status.json'; path.write_text('{"state":"running"}')
+        with worker_lock(self.data/'.summary-worker'):
+            code,output=self.run_service()
+        self.assertEqual(code,0); self.assertEqual(json.loads(output)['state'],'busy')
+        self.assertEqual(json.loads(path.read_text()),{'state':'running'})
+        (self.data/'summary-STOP').touch()
+        code,output=self.run_service()
+        self.assertEqual(code,0); self.assertEqual(json.loads(output)['state'],'stopped')
+        self.assertEqual(json.loads(path.read_text()),{'state':'running'})
     def test_failure_queued_and_private_diagnostic(self):
         Queue.items=[{'fragment_id':'a'*32,'day':'2026-10-27','facts':['topic_testing'],'coverage':'partial'}]
         Publisher.result=RuntimeError('SECRET transcript body')
