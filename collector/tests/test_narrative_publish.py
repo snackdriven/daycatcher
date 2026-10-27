@@ -49,7 +49,10 @@ class Remote:
 class NarrativeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.db = Path(self.temp.name) / 'receipts.sqlite3'
+        # macOS temporary paths may use /var, a symlink to /private/var.
+        # Fixtures must use the same canonical paths required by the real CLI.
+        self.root = Path(self.temp.name).resolve()
+        self.db = self.root / 'receipts.sqlite3'
         self.remote = Remote()
         self.entry, self.manifest = inputs()
     def tearDown(self):
@@ -67,7 +70,7 @@ class NarrativeTests(unittest.TestCase):
     def test_deleted_block_and_missing_file_never_resurrect(self):
         for deleted in (b'# user kept only this\n', None):
             with self.subTest(deleted=deleted):
-                self.db = Path(self.temp.name) / ('none.sqlite3' if deleted is None else 'gone.sqlite3')
+                self.db = self.root / ('none.sqlite3' if deleted is None else 'gone.sqlite3')
                 self.remote = Remote()
                 self.publisher().publish(self.entry, self.manifest)
                 self.remote.content = deleted
@@ -176,10 +179,10 @@ class NarrativeTests(unittest.TestCase):
         import json
         import subprocess
         import sys
-        entry_file, manifest_file = Path(self.temp.name) / 'entry.json', Path(self.temp.name) / 'manifest.json'
+        entry_file, manifest_file = self.root / 'entry.json', self.root / 'manifest.json'
         entry_file.write_text(json.dumps(self.entry), encoding='utf-8')
         manifest_file.write_text(json.dumps(self.manifest), encoding='utf-8')
-        preview = Path(self.temp.name) / 'preview.md'
+        preview = self.root / 'preview.md'
         command = [sys.executable, str(Path(__file__).resolve().parents[1] / 'publish_narrative.py'),
                    '--entry', str(entry_file), '--manifest', str(manifest_file), '--preview', str(preview)]
         result = subprocess.run(command, capture_output=True, text=True)
@@ -256,14 +259,14 @@ class NarrativeTests(unittest.TestCase):
         self.assertEqual(first['input_digest'], result['input_digest'])
         self.assertEqual(1, self.remote.writes)
     def test_stop_preexisting_prevents_remote_reads_and_writes(self):
-        stop = Path(self.temp.name) / 'narrative-STOP'
+        stop = self.root / 'narrative-STOP'
         stop.touch()
         with self.assertRaisesRegex(NarrativeError, 'stopped'):
             NarrativePublisher('gh', self.db, transport=self.remote, stop_path=stop).publish(self.entry,self.manifest)
         self.assertEqual(0,self.remote.reads)
         self.assertEqual(0,self.remote.writes)
     def test_stop_created_during_privacy_read_prevents_write(self):
-        stop = Path(self.temp.name) / 'narrative-STOP'
+        stop = self.root / 'narrative-STOP'
         repo = self.remote.repo
         def privacy():
             value = repo()
@@ -274,7 +277,7 @@ class NarrativeTests(unittest.TestCase):
             NarrativePublisher('gh', self.db, transport=self.remote, stop_path=stop).publish(self.entry,self.manifest)
         self.assertEqual(0,self.remote.writes)
     def test_stop_after_accepted_write_allows_delivery_ack(self):
-        stop = Path(self.temp.name) / 'narrative-STOP'
+        stop = self.root / 'narrative-STOP'
         write = self.remote.write
         def accepted(*args):
             result = write(*args)
@@ -287,14 +290,14 @@ class NarrativeTests(unittest.TestCase):
     def cli_fixture(self):
         import json
         import sys
-        root = Path(self.temp.name)
+        root = self.root
         writer = root/'narrative-writer';writer.mkdir(exist_ok=True)
         entry_file,manifest_file = writer/'entry.json',writer/'manifest.json'
         entry_file.write_text(json.dumps(self.entry),encoding='utf-8')
         manifest_file.write_text(json.dumps(self.manifest),encoding='utf-8')
         config = root/'personal-summary.json'
         value = {'profile':'personal','data_dir':str(root),'source_db':str(root/'collector.sqlite3'),
-            'queue_db':str(root/'personal-summary.sqlite3'),'gh_path':sys.executable,'enabled':False,
+            'queue_db':str(root/'personal-summary.sqlite3'),'gh_path':str(Path(sys.executable).resolve()),'enabled':False,
             'repository':'snackdriven/day-crumbs','branch':'main','tzdata_dir':str(root/'tzdata'),
             'tzdata_sha256':'a'*64}
         config.write_text(json.dumps(value),encoding='utf-8')
@@ -307,7 +310,7 @@ class NarrativeTests(unittest.TestCase):
         from unittest.mock import patch
         from publish_narrative import main
         args=self.cli_fixture()
-        (Path(self.temp.name)/'narrative-STOP').touch()
+        (self.root/'narrative-STOP').touch()
         output=io.StringIO()
         with patch('personal_summary_service.configure_timezone'), patch('publish_narrative.NarrativePublisher') as publisher, contextlib.redirect_stdout(output):
             self.assertEqual(0,main(args))
@@ -319,8 +322,8 @@ class NarrativeTests(unittest.TestCase):
         from unittest.mock import patch
         from publish_narrative import main
         args=self.cli_fixture()
-        for flag,path in (('--entry',str(Path(self.temp.name)/'outside.json')),
-                          ('--receipts',str(Path(self.temp.name)/'other.sqlite3'))):
+        for flag,path in (('--entry',str(self.root/'outside.json')),
+                          ('--receipts',str(self.root/'other.sqlite3'))):
             bad=list(args);bad[bad.index(flag)+1]=path
             with patch('personal_summary_service.configure_timezone'), patch('publish_narrative.NarrativePublisher') as publisher, contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(1,main(bad))
@@ -335,10 +338,10 @@ class NarrativeTests(unittest.TestCase):
         with patch('personal_summary_service.configure_timezone'), patch('publish_narrative.NarrativePublisher') as publisher, contextlib.redirect_stdout(io.StringIO()):
             publisher.return_value.publish.return_value={'state':'reconciled'}
             self.assertEqual(0,main(args))
-        self.assertEqual(sys.executable,publisher.call_args.args[0])
-        self.assertEqual(Path(self.temp.name)/'narrative-STOP',publisher.call_args.kwargs['stop_path'])
+        self.assertEqual(str(Path(sys.executable).resolve()),publisher.call_args.args[0])
+        self.assertEqual(self.root/'narrative-STOP',publisher.call_args.kwargs['stop_path'])
     def test_stop_at_final_privacy_check_is_retryable_after_resume(self):
-        stop=Path(self.temp.name)/'narrative-STOP'
+        stop=self.root/'narrative-STOP'
         repo=self.remote.repo
         calls=0
         def privacy():
@@ -354,3 +357,15 @@ class NarrativeTests(unittest.TestCase):
         stop.unlink()
         result=NarrativePublisher('gh',self.db,transport=self.remote,stop_path=stop).publish(self.entry,self.manifest)
         self.assertEqual('published',result['state'])
+    def test_canonical_fixture_does_not_relax_symlink_rejection(self):
+        from unittest.mock import patch
+        from publish_narrative import _plain_absolute
+        alias=self.root/'pretend-var'/'runtime'
+        original=Path.is_symlink
+        # Model macOS's aliased /var ancestor without creating real symlinks
+        # or needing Windows developer-mode privileges.
+        with patch.object(Path,'is_symlink',autospec=True,
+                          side_effect=lambda path:path==alias.parent or original(path)):
+            with self.assertRaisesRegex(NarrativeError,'private_runtime_binding'):
+                _plain_absolute(alias)
+            self.assertEqual(self.root,_plain_absolute(self.root))

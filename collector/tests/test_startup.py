@@ -13,8 +13,10 @@ class StartupTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.data = Path(self.temp.name) / 'runtime'
-        self.config = Path(self.temp.name) / 'collector.json'
+        # Match startup's canonical config binding on macOS /var temp aliases.
+        root = Path(self.temp.name).resolve()
+        self.data = root / 'runtime'
+        self.config = root / 'collector.json'
         self.config.write_text(json.dumps({'data_dir': str(self.data), 'db': str(self.data / 'db.sqlite3'), 'claude': {'enabled': True}}))
         self.running = {'local': {'state': 'running'}, 'claude': {'active': True}}
 
@@ -108,3 +110,12 @@ class StartupTests(unittest.TestCase):
             self.assertEqual(self.call(), 1)
         manager.assert_not_called()
         self.assertEqual(self.status()['event'], 'startup_error')
+    def test_alias_config_is_resolved_before_manager_invocation(self):
+        alias=self.config.with_name('pretend-var-config.json')
+        original=Path.resolve
+        # Safely reproduce two spellings of one config on every platform.
+        def resolved(path,*args,**kwargs):
+            return self.config if path==alias else original(path,*args,**kwargs)
+        with mock.patch.object(Path,'resolve',autospec=True,side_effect=resolved),mock.patch.object(startup,'worker_health',side_effect=[{},self.running]),mock.patch.object(startup.manage,'local_is_locked',return_value=False),mock.patch.object(startup.manage,'bridge_is_locked',return_value=False),mock.patch.object(startup.manage,'main',return_value=0) as manager:
+            self.assertEqual(0,startup.main(['--config',str(alias)]))
+        manager.assert_called_once_with(['start','--config',str(self.config)])
