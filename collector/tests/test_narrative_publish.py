@@ -369,3 +369,18 @@ class NarrativeTests(unittest.TestCase):
             with self.assertRaisesRegex(NarrativeError,'private_runtime_binding'):
                 _plain_absolute(alias)
             self.assertEqual(self.root,_plain_absolute(self.root))
+    def test_append_mixed_consumed_and_fresh_ids_rejected_without_receipt_mutation(self):
+        self.publisher().publish(self.entry,self.manifest)
+        prior_db=self.db.read_bytes();prior_remote=self.remote.content
+        self.entry['paragraphs'].append({'text':'i also wanted a place for the later thought.',
+                                        'evidence_ids':['personal_1','personal_2']})
+        self.manifest['evidence'].append({'id':'personal_2','day':self.entry['day'],'source':'personal'})
+        with self.assertRaisesRegex(NarrativeError,'non_append_update'):
+            self.publisher().publish(self.entry,self.manifest)
+        self.assertEqual(prior_db,self.db.read_bytes())
+        self.assertEqual(prior_remote,self.remote.content)
+        self.assertEqual(1,self.remote.writes)
+        # Dropping consumed support permits genuinely new material to append.
+        self.entry['paragraphs'][-1]['evidence_ids']=['personal_2']
+        self.assertEqual('published',self.publisher().publish(self.entry,self.manifest)['state'])
+        self.assertEqual(2,self.remote.writes)

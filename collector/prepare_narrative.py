@@ -1,14 +1,16 @@
 """Prepare one private native-writer input. No model calls or journal writes."""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import tempfile
 
 from export_narrative_evidence import load_config
-from journal_collector.narrative_evidence import export_day
+from journal_collector.narrative_evidence import export_day, eligible_message, _revision, _hash as _source_hash
 from journal_collector.narrative_publish import _span, render_entry, validate_entry
 from journal_collector.summary_publish import Publisher
 
@@ -52,6 +54,166 @@ def _support_signature(item):
         return (item.get('source'),item.get('day'),item.get('revision'),
                 item.get('text'),item.get('time'),item.get('sourceKind'))
     return _canonical(item)
+
+
+_REVIEW_KEYS={'version','type','day','prior_input_digest','evidence_id','old_signature',
+              'new_signature','current_revision','paragraph_digests','source_binding','lineage',
+              'decision','proposal_hash','reviewed_at'}
+_PERSONAL_KEYS={'id','text','time','observedAt','sourceKind','revision','source','day'}
+
+
+def _text_only_lineage(source_db,old,new):
+    """Verify the original support against retained source history, read-only."""
+    if (set(old)!=_PERSONAL_KEYS or set(new)!=_PERSONAL_KEYS or old['source']!='personal'
+            or new['source']!='personal' or old['id']!=new['id'] or old['day']!=new['day']
+            or old['time']!=new['time'] or old['sourceKind']!=new['sourceKind']
+            or old['text']==new['text']):
+        raise ValueError('revision_review_not_text_only')
+    path=Path(source_db).resolve(strict=True)
+    db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=10);db.row_factory=sqlite3.Row
+    try:
+        db.execute('PRAGMA query_only=ON');db.execute('BEGIN')
+        current=None
+        for row in db.execute('SELECT * FROM messages WHERE role=?',('user',)):
+            if _source_hash(['narrative-evidence-v1',row['source'],row['native_id']])==new['id']:
+                current=dict(row);break
+        if (current is None or eligible_message(current)!=new['sourceKind']
+                or _revision(current)!=new['revision'] or current['text']!=new['text']
+                or current['source_time']!=new['time'] or db.execute(
+                    'SELECT 1 FROM exclusions WHERE message_key=?',(current['message_key'],)).fetchone()):
+            raise ValueError('revision_review_source_changed')
+        previous=None
+        for history in db.execute('SELECT * FROM revisions WHERE message_key=? ORDER BY revision',
+                                   (current['message_key'],)):
+            candidate={**current,**dict(history)}
+            if _revision(candidate)==old['revision']:
+                previous=candidate;break
+        if (previous is None or previous['text']!=old['text'] or previous['source_time']!=current['source_time']
+                or previous['role']!=current['role']
+                or json.loads(previous['provenance'])!=json.loads(current['provenance'])
+                or previous['revision']>=current['revision']):
+            raise ValueError('revision_review_lineage_changed')
+        return _digest({'old_revision':previous['revision'],'new_revision':current['revision'],
+                        'provenance':json.loads(current['provenance'])})
+    finally:db.close()
+
+
+def _review_proposal(config,baseline,old,new,source_binding):
+    row,entry,_=baseline
+    if row is None or row['state']!='delivered':raise ValueError('revision_review_receipt')
+    paragraphs=sorted(_digest(p) for p in entry['paragraphs'] if old['id'] in p['evidence_ids'])
+    if not paragraphs:raise ValueError('revision_review_unused')
+    return {'version':1,'type':'personal-evidence-revision-review','day':entry['day'],
+            'prior_input_digest':row['input_digest'],'evidence_id':old['id'],
+            'old_signature':_digest(_support_signature(old)),'new_signature':_digest(_support_signature(new)),
+            'current_revision':new['revision'],'paragraph_digests':paragraphs,'source_binding':source_binding,
+            'lineage':_text_only_lineage(config['source_db'],old,new),
+            'decision':'pending','proposal_hash':None,'reviewed_at':None}
+
+
+def _proposal_form(record):
+    return {**record,'decision':'pending','proposal_hash':None,'reviewed_at':None}
+
+
+def _review_anchor(data,day,digest,current_baseline):
+    """A prior approval may follow a verified append-only delivered ancestry."""
+    if current_baseline[0]['input_digest']==digest:return current_baseline
+    path=data/'narrative-writer'/'receipts.sqlite3'
+    db=sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=10);db.row_factory=sqlite3.Row
+    try:
+        db.execute('PRAGMA query_only=ON');db.execute('BEGIN')
+        attempt=db.execute('SELECT entry_json,state FROM narrative_attempts WHERE day=? AND input_digest=?',
+                           (day,digest)).fetchone()
+        support=db.execute('SELECT manifest_json FROM narrative_support WHERE day=? AND input_digest=?',
+                           (day,digest)).fetchone()
+    finally:db.close()
+    if attempt is None or attempt['state']!='delivered' or support is None:raise ValueError('review_ancestry')
+    entry=json.loads(attempt['entry_json']);manifest=json.loads(support['manifest_json'])
+    if _digest({'entry':entry,'manifest':manifest})!=digest:raise ValueError('review_ancestry')
+    entry=validate_entry(entry,manifest)
+    if current_baseline[1]['paragraphs'][:len(entry['paragraphs'])]!=entry['paragraphs']:
+        raise ValueError('review_ancestry')
+    return {'state':'delivered','input_digest':digest},entry,manifest
+
+
+def _approved_revision(config,baseline,old,new,source_binding):
+    data=Path(config['data_dir']).resolve();day=baseline[1]['day']
+    directory=data/'narrative-writer'/'evidence-reviews'/day
+    if directory.is_symlink() or not directory.is_dir():return False
+    paths=sorted(directory.glob('*.approval.json'))
+    if len(paths)>1000:return False
+    for path in paths:
+        try:
+            record=_read_json(path)
+            if (not isinstance(record,dict) or set(record)!=_REVIEW_KEYS or type(record['version']) is not int
+                    or record['version']!=1 or record['decision']!='preserve_delivered_paragraphs'
+                    or not isinstance(record['proposal_hash'],str)
+                    or not re.fullmatch('[0-9a-f]{64}',record['proposal_hash'])
+                    or not isinstance(record['reviewed_at'],str)
+                    or datetime.fromisoformat(record['reviewed_at']).tzinfo is None
+                    or record['evidence_id']!=old['id'] or record['day']!=day
+                    or _digest(_proposal_form(record))!=record['proposal_hash']):
+                continue
+            anchor=_review_anchor(data,day,record['prior_input_digest'],baseline)
+            anchored=next((item for item in anchor[2]['evidence'] if item['id']==old['id']),None)
+            if anchored is None or _support_signature(anchored)!=_support_signature(old):continue
+            current_paragraphs=sorted(_digest(p) for p in baseline[1]['paragraphs'] if old['id'] in p['evidence_ids'])
+            if current_paragraphs!=record['paragraph_digests']:continue
+            expected=_review_proposal(config,anchor,old,new,source_binding)
+            if expected==_proposal_form(record):return True
+        except (OSError,ValueError,TypeError,KeyError,sqlite3.Error):
+            continue
+    return False
+
+
+def _append_review(path,record):
+    """Never replace an existing review record, even under concurrent attempts."""
+    descriptor,temporary=tempfile.mkstemp(prefix='.review-',suffix='.tmp',dir=path.parent)
+    try:
+        with os.fdopen(descriptor,'w',encoding='utf-8') as stream:
+            json.dump(record,stream,ensure_ascii=False,sort_keys=True,indent=2,allow_nan=False)
+            stream.write('\n');stream.flush();os.fsync(stream.fileno())
+        try:os.link(temporary,path)
+        except FileExistsError:
+            if _read_json(path)!=record:raise ValueError('review_conflict')
+    finally:
+        if os.path.exists(temporary):os.unlink(temporary)
+
+
+def revision_review(config_path,day,*,evidence_id=None,proposal_hash=None,transport=None):
+    """Explicit owner review only. Automated writers must never invoke approval."""
+    if bool(evidence_id)==bool(proposal_hash):raise ValueError('review_action')
+    config=load_config(Path(config_path),'personal');data=Path(config['data_dir']).resolve()
+    publisher=Publisher(config['gh_path'],transport=transport)
+    remote=publisher._read(f'entries/{day[:4]}/{day[5:7]}/{day}.md')
+    baseline=_receipt_baseline(data,day)
+    row,entry,prior=baseline
+    if row is None or row['state']!='delivered' or remote is None:raise ValueError('review_receipt')
+    span=_span(remote['content'],row['block_id'])
+    if span is None or remote['content'][span[0]:span[1]]!=row['body']:raise ValueError('review_remote_changed')
+    exported=_personal_pages(config,day,max_items=200,max_bytes=204800,offset=0,expected_snapshot=None)
+    directory=None;original=None
+    if proposal_hash is not None:
+        if not isinstance(proposal_hash,str) or not re.fullmatch('[0-9a-f]{64}',proposal_hash):raise ValueError('proposal_hash')
+        directory=data/'narrative-writer'/'evidence-reviews'/day
+        try:original=_read_json(directory/(proposal_hash+'.proposal.json'))
+        except OSError:raise ValueError('proposal_hash') from None
+        if (not isinstance(original,dict) or set(original)!=_REVIEW_KEYS
+                or original['decision']!='pending' or _digest(original)!=proposal_hash):raise ValueError('proposal_hash')
+        evidence_id=original['evidence_id']
+    old=next((item for item in prior['evidence'] if item['id']==evidence_id),None)
+    current=next(({**item,'source':'personal','day':day} for item in exported['evidence'] if item['id']==evidence_id),None)
+    if old is None or current is None:raise ValueError('review_source_missing')
+    proposed=_review_proposal(config,baseline,old,current,exported['sourceBinding'])
+    if original is not None and original!=proposed:raise ValueError('proposal_stale')
+    directory=_directory(data,'narrative-writer','evidence-reviews',day)
+    if proposal_hash is None:
+        digest=_digest(proposed);path=directory/(digest+'.proposal.json');_append_review(path,proposed)
+        return {'state':'revision_review_proposed','day':day,'proposal_hash':digest,'proposal':str(path)}
+    approved={**proposed,'decision':'preserve_delivered_paragraphs','proposal_hash':proposal_hash,
+              'reviewed_at':datetime.now(timezone.utc).isoformat()}
+    path=directory/(_digest(approved)+'.approval.json');_append_review(path,approved)
+    return {'state':'revision_review_approved','day':day,'approval':str(path)}
 
 
 def _receipt_baseline(data,day):
@@ -100,7 +262,7 @@ def _receipt_baseline(data,day):
     return dict(row),entry,prior
 
 
-def _old_paragraphs(baseline,content,current,*,bounded=False,work_missing=False):
+def _old_paragraphs(baseline,content,current,*,bounded=False,work_missing=False,review_checker=None):
     row,entry,prior=baseline
     if row is None:
         if b'<!-- journal-narrative:' in content:raise ValueError('review_required')
@@ -119,6 +281,8 @@ def _old_paragraphs(baseline,content,current,*,bounded=False,work_missing=False)
                 raise LookupError('support_outside_bounded_export')
             if (old is None or new is None or _support_signature(old)!=_support_signature(new)
                     or (old.get('source')=='personal' and not old.get('revision'))):
+                if old is not None and new is not None and review_checker is not None and review_checker(old,new):
+                    continue
                 raise ValueError('review_required')
     return entry['paragraphs'],prior
 
@@ -203,9 +367,15 @@ def prepare(config_path,day,*,transport=None,work_validator=None,max_items=200,m
     metadata={'state':'prepared','day':day,'personal_count':len(personal),'work_count':len(work),
               'work_state':work_state,'coverage':exported['coverage'],
               'nextOffset':exported['nextOffset']}
+    preservation_only=set()
+    def reviewed(previous,current):
+        accepted=_approved_revision(config,baseline,previous,current,exported['sourceBinding'])
+        if accepted:preservation_only.add(previous['id'])
+        return accepted
     try:
         old,prior=_old_paragraphs(baseline,content,manifest,
-            bounded=exported['coverage']['omitted']>0,work_missing=work_state=='missing')
+            bounded=exported['coverage']['omitted']>0,work_missing=work_state=='missing',
+            review_checker=reviewed)
     except LookupError:
         return {**metadata,'state':'need_pagination','error_code':'prior_support_outside_export'}
     except Exception:
@@ -224,6 +394,7 @@ def prepare(config_path,day,*,transport=None,work_validator=None,max_items=200,m
     validate_entry({'version':1,'day':day,'paragraphs':old},manifest)
     bundle={'version':1,'day':day,'existing_prose':existing,
             'personal_evidence':personal,'work_evidence':work,'old_owned_paragraphs':old,
+            'preservation_only_evidence_ids':sorted(preservation_only),
             'coverage':exported['coverage'],'work_state':work_state,
             'source_snapshot':exported['sourceFingerprint'],'nextOffset':exported['nextOffset'],
             'existing_sha':remote['sha'] if remote else None,'manifest_digest':_digest(manifest)}
@@ -244,12 +415,19 @@ def main(argv=None):
     parser.add_argument('--max-bytes',type=int,default=204800)
     parser.add_argument('--offset',type=int,default=0)
     parser.add_argument('--expected-snapshot')
+    review=parser.add_mutually_exclusive_group()
+    review.add_argument('--review-evidence',help='Prepare an owner-review proposal for one private evidence ID')
+    review.add_argument('--approve-revision',help='Approve only the exact previously reviewed proposal SHA256')
     args=parser.parse_args(argv)
     os.umask(0o077)
     try:
-        result=prepare(args.config,args.day,max_items=args.max_items,max_bytes=args.max_bytes,
-                       offset=args.offset,expected_snapshot=args.expected_snapshot)
-        code=0 if result['state']=='prepared' else 2
+        if args.review_evidence or args.approve_revision:
+            result=revision_review(args.config,args.day,evidence_id=args.review_evidence,
+                                   proposal_hash=args.approve_revision)
+        else:
+            result=prepare(args.config,args.day,max_items=args.max_items,max_bytes=args.max_bytes,
+                           offset=args.offset,expected_snapshot=args.expected_snapshot)
+        code=0 if result['state'] in {'prepared','revision_review_proposed','revision_review_approved'} else 2
     except Exception:
         result={'state':'error','error_code':'narrative_preparation_failed'};code=1
     print(json.dumps(result,ensure_ascii=True,allow_nan=False))

@@ -21,6 +21,26 @@ This runbook restores natural journal paragraphs. The fixed topic renderer is a 
 8. Only after successful natural narrative delivery, `journal_collector.narrative_cleanup.cleanup_day(gh_path, day, stop_path=<runtime>/narrative-STOP)` may archive exact untouched legacy topic spans under private `imports/retired-context/v1/` and remove those spans. Edited blocks and all other bytes remain unchanged. Existing delivered receipts are retained, not requeued or rewritten.
 9. Repeat the exact publish to verify reconciliation without duplicate prose. Record metadata-only native-journal-status.json: run time, code source, days considered, input/work availability, review state, paragraphs actually delivered, blob SHA and partial coverage. A prepared input or topic file is not a written journal.
 
+## Explicit review of one personal source edit
+
+A changed used source normally keeps preparation at `review_required`. An owner may deliberately review the exact old and current source text against every paragraph it supports. This is a separate manual review action. The automated writer must never generate an approval or treat instructions inside evidence as approval.
+
+After that review, prepare a proposal for the one private evidence ID:
+
+```sh
+python prepare_narrative.py --config /absolute/private/runtime/personal-summary.json --day YYYY-MM-DD --review-evidence PRIVATE_EVIDENCE_ID
+```
+
+This writes a pending proposal under the private writer's `evidence-reviews/YYYY-MM-DD/` directory and returns its SHA256. A pending proposal grants nothing. To preserve the exact already-delivered paragraphs after approving only that precise edit, invoke:
+
+```sh
+python prepare_narrative.py --config /absolute/private/runtime/personal-summary.json --day YYYY-MM-DD --approve-revision EXACT_REVIEWED_PROPOSAL_SHA256
+```
+
+Approval rechecks the original proposal hash against the current source revision and exact remote owned span. It records the day, delivered input digest, affected paragraph digests, old and new support signatures, source binding and verified source-history lineage. The source must still be eligible, with the same role, timestamp and provenance. Deletions, exclusions, unknown record shapes and later edits remain blocked. There is no text normalization exception or option to ignore revisions.
+
+Reviews are additive private files. Source data, historical support and publication receipts remain unchanged. Preparation retains the approved old support records and the exact delivered paragraphs. The private input marks these IDs as `preservation_only_evidence_ids`. The publisher requires every appended paragraph to cite only fresh IDs: any ID already consumed by a delivered paragraph is forbidden in new paragraphs, including mixed old-and-fresh support. An approval can follow later append-only delivery only when immutable delivered attempts and support prove the original digest and the same affected paragraphs. A new use is outside this preservation-only approval. A different source revision needs another deliberate review. Run normal preparation again after approval; this action itself never publishes.
+
 ## Scheduling and ownership
 
 Use one native writer automation. It checks hourly for the CURRENT 03:00 to 03:00 journal day and the preceding day, allowing a sleeping/offline PC to catch up when the app becomes available. Writing uses the native model, not a new API key or a desktop chat window. Local runtime/app access is still required. The original Rook cloud writer may remain active; its current task prompt cannot be inspected here. Therefore this publisher owns only `journal-narrative` spans, preserves all Rook/manual prose, and avoids repeating moments already expressed outside its span. Do not claim that the cloud task was disabled or that a local automation runs while the PC is off.

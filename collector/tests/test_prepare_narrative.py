@@ -217,5 +217,90 @@ class PrepareTests(unittest.TestCase):
             self.assertEqual(0,main(['--config',str(self.config),'--day','2026-10-27']))
         self.assertNotIn('SQL',output.getvalue());self.assertNotIn('evidence_ids',output.getvalue())
 
+    def revise(self,text,**changes):
+        row=dict(self.store.connection.execute('SELECT * FROM messages WHERE native_id=?',('one',)).fetchone())
+        item={key:row[key] for key in ('native_id','conversation_id','role','source_time','observed_at','text')}
+        item.update(complete=True,provenance=json.loads(row['provenance']),text=text)
+        item.update(changes)
+        self.store.ingest_batch(dict(batch_id='revision-'+str(row['revision']+1),source=row['source'],
+            cursor_key='private-file',cursor={},coverage={'status':'partial'},messages=[item]))
+
+    def approve_edit(self):
+        from prepare_narrative import revision_review
+        identity=json.loads((self.data/'narrative-writer'/'inputs'/'2026-10-27-manifest.json').read_text())['evidence'][0]['id']
+        proposal=revision_review(self.config,'2026-10-27',evidence_id=identity,transport=self.gh)
+        self.assertEqual('revision_review_proposed',proposal['state'])
+        # A proposal alone is never an approval.
+        self.assertEqual('review_required',self.run_prepare()['state'])
+        approved=revision_review(self.config,'2026-10-27',proposal_hash=proposal['proposal_hash'],transport=self.gh)
+        self.assertEqual('revision_review_approved',approved['state'])
+        return proposal,approved
+
+    def test_exact_personal_revision_review_preserves_prose_and_immutable_receipts(self):
+        entry,receipts=self.deliver()
+        receipt_before=receipts.read_bytes();remote_before=self.gh.files[self.entry_path]['content']
+        self.revise('I wanted to learn SQl.')
+        self.assertEqual('review_required',self.run_prepare()['state'])
+        self.approve_edit()
+        result=self.run_prepare()
+        self.assertEqual('prepared',result['state'])
+        self.assertEqual(entry['paragraphs'],self.bundle(result)['old_owned_paragraphs'])
+        self.assertEqual(entry['paragraphs'][0]['evidence_ids'],self.bundle(result)['preservation_only_evidence_ids'])
+        self.assertEqual(receipt_before,receipts.read_bytes())
+        self.assertEqual(remote_before,self.gh.files[self.entry_path]['content'])
+
+    def test_review_does_not_cover_a_later_edit_or_exclusion(self):
+        self.deliver();self.revise('I wanted to learn SQl.');self.approve_edit()
+        self.revise('I do not want to learn SQL.')
+        self.assertEqual('review_required',self.run_prepare()['state'])
+        self.store.exclude(self.store.connection.execute('SELECT message_key FROM messages').fetchone()[0])
+        self.assertEqual('review_required',self.run_prepare()['state'])
+
+    def test_provenance_change_cannot_be_approved_as_text_only(self):
+        from prepare_narrative import revision_review
+        self.deliver()
+        identity=json.loads((self.data/'narrative-writer'/'inputs'/'2026-10-27-manifest.json').read_text())['evidence'][0]['id']
+        self.revise('I wanted to learn SQl.',provenance=dict(adapter='codex-local-jsonl-v1',origin='native-user-role',timestamp_valid=True,extra='changed'))
+        with self.assertRaises(ValueError):revision_review(self.config,'2026-10-27',evidence_id=identity,transport=self.gh)
+        self.assertEqual('review_required',self.run_prepare()['state'])
+
+    def test_proposal_hash_and_unknown_shape_cannot_approve(self):
+        from prepare_narrative import revision_review
+        self.deliver();self.revise('I wanted to learn SQl.')
+        identity=json.loads((self.data/'narrative-writer'/'inputs'/'2026-10-27-manifest.json').read_text())['evidence'][0]['id']
+        proposal=revision_review(self.config,'2026-10-27',evidence_id=identity,transport=self.gh)
+        with self.assertRaises(ValueError):revision_review(self.config,'2026-10-27',proposal_hash='0'*64,transport=self.gh)
+        path=Path(proposal['proposal']);data=json.loads(path.read_text());data['ignore_all_revisions']=True
+        path.write_text(json.dumps(data),encoding='utf-8')
+        with self.assertRaises(ValueError):revision_review(self.config,'2026-10-27',proposal_hash=proposal['proposal_hash'],transport=self.gh)
+        self.assertEqual('review_required',self.run_prepare()['state'])
+
+    def test_approval_follows_verified_append_ancestry_only_for_unchanged_paragraphs(self):
+        entry,receipts=self.deliver();self.revise('I wanted to learn SQl.');self.approve_edit()
+        self.store.connection.execute('INSERT INTO messages SELECT message_key||?,source,native_id||?,conversation_id,role,?,source_time,observed_at,complete,revision,provenance FROM messages WHERE native_id=?',
+            ('new','new','I wanted to paint.','one'))
+        prepared=self.run_prepare()
+        self.assertEqual('prepared',prepared['state'])
+        manifest=json.loads(Path(prepared['manifest']).read_text())
+        old_ids={i for p in entry['paragraphs'] for i in p['evidence_ids']}
+        fresh=next(i for i in manifest['evidence'] if i['id'] not in old_ids)
+        updated={**entry,'paragraphs':entry['paragraphs']+[{'text':'I wanted to paint.','evidence_ids':[fresh['id']]}]}
+        NarrativePublisher('gh',receipts,transport=self.gh).publish(updated,manifest)
+        result=self.run_prepare()
+        self.assertEqual('prepared',result['state'])
+        self.assertEqual(updated['paragraphs'],self.bundle(result)['old_owned_paragraphs'])
+
+    def test_stale_proposal_and_later_provenance_change_do_not_reuse_review(self):
+        from prepare_narrative import revision_review
+        self.deliver();self.revise('I wanted to learn SQl.')
+        identity=json.loads((self.data/'narrative-writer'/'inputs'/'2026-10-27-manifest.json').read_text())['evidence'][0]['id']
+        proposal=revision_review(self.config,'2026-10-27',evidence_id=identity,transport=self.gh)
+        self.revise('I wanted to learn SQl!')
+        with self.assertRaises(ValueError):revision_review(self.config,'2026-10-27',proposal_hash=proposal['proposal_hash'],transport=self.gh)
+        self.approve_edit()
+        p=json.loads(self.store.connection.execute('SELECT provenance FROM messages WHERE native_id=?',('one',)).fetchone()[0]);p['new_attribution']='different'
+        self.store.connection.execute('UPDATE messages SET provenance=? WHERE native_id=?',(json.dumps(p),'one'))
+        self.assertEqual('review_required',self.run_prepare()['state'])
+
 
 if __name__=='__main__':unittest.main()

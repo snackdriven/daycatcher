@@ -227,6 +227,15 @@ class NarrativePublisher:
             raise NarrativeError('review_required')
         if row and row['state'] == 'pending' and row['input_digest'] != digest:
             raise NarrativeError('pending_input')
+        if row and row['state'] == 'delivered' and row['input_digest'] != digest:
+            old = json.loads(row['entry_json'])['paragraphs']
+            new = entry['paragraphs']
+            old_ids = {identity for paragraph in old for identity in paragraph['evidence_ids']}
+            # Approval of old support preserves its exact delivered use only.
+            # Reject retellings before saving any candidate/support receipt.
+            if (len(new) <= len(old) or new[:len(old)] != old
+                    or any(set(paragraph['evidence_ids']) & old_ids for paragraph in new[len(old):])):
+                raise NarrativeError('non_append_update')
         self._save_support(db, day, digest, manifest)
         block_id = row['block_id'] if row else uuid.uuid4().hex
         body = render_entry(entry, block_id)
@@ -251,13 +260,6 @@ class NarrativePublisher:
                         return {'state': 'reconciled', 'day': day, 'block_id': block_id,
                                 'body_hash': row['body_hash'], 'input_digest': digest,
                                 'blob_sha': remote['sha']}
-                    old = json.loads(row['entry_json'])['paragraphs']
-                    new = entry['paragraphs']
-                    if len(new) <= len(old) or new[:len(old)] != old:
-                        raise NarrativeError('non_append_update')
-                    old_ids = {i for p in old for i in p['evidence_ids']}
-                    if any(not (set(p['evidence_ids']) - old_ids) for p in new[len(old):]):
-                        raise NarrativeError('non_append_update')
                     prior = row['body']
                 else:
                     if current_body == row['body']:
