@@ -1,4 +1,4 @@
-"""FastAPI app — single-process backend for the Meat-Suit web UI.
+"""FastAPI app: single-process backend for the Daycatcher web UI.
 
 Serves `/api/*` and (in production) the built React SPA at `/`. The brain's
 APScheduler runs in this same event loop via the lifespan context manager, so
@@ -198,7 +198,7 @@ async def lifespan(app: FastAPI):
     app.state.scheduler = scheduler
 
     log.info(
-        "meat-suit api up: bind=%s:%d tz=%s db=%s",
+        "daycatcher api up: bind=%s:%d tz=%s db=%s",
         cfg.web_bind_host, cfg.web_port, cfg.timezone, cfg.database_path,
     )
     if not db.auth_has_passcode(cfg.database_path):
@@ -222,7 +222,7 @@ async def lifespan(app: FastAPI):
 # ---------- app ----------
 
 
-app = FastAPI(lifespan=lifespan, title="Meat-Suit", docs_url=None, redoc_url=None)
+app = FastAPI(lifespan=lifespan, title="Daycatcher", docs_url=None, redoc_url=None)
 
 # CORS only matters during dev when Vite runs on a different port. In prod
 # FastAPI serves the SPA from the same origin. Allow localhost ports broadly
@@ -742,7 +742,7 @@ async def get_export(request: Request) -> Response:
         content=payload,
         media_type="application/json",
         headers={
-            "Content-Disposition": f'attachment; filename="meat_suit_export_{today}.json"',
+            "Content-Disposition": f'attachment; filename="daycatcher_export_{today}.json"',
         },
     )
 

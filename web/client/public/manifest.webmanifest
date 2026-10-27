@@ -1,6 +1,6 @@
 {
-  "name": "Meat-Suit",
-  "short_name": "Meat-Suit",
+  "name": "Daycatcher",
+  "short_name": "Daycatcher",
   "description": "Private terminal for the brain.",
   "start_url": "/",
   "display": "standalone",

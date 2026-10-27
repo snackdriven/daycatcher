@@ -775,7 +775,7 @@ def main() -> None:
     )
     cfg = load_config()
     app = build_app(cfg)
-    log.info("meat-suit v2 starting, owner=%s, tz=%s", cfg.telegram_owner_id, cfg.timezone)
+    log.info("daycatcher v2 starting, owner=%s, tz=%s", cfg.telegram_owner_id, cfg.timezone)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

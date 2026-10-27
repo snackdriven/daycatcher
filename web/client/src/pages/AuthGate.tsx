@@ -91,7 +91,7 @@ function PasscodeForm({ mode, locked, lockedUntil, onSuccess }: PasscodeFormProp
         data-testid={`form-auth-${mode}`}
       >
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-medium tracking-tight">meat-suit.</h1>
+          <h1 className="text-3xl font-medium tracking-tight">daycatcher.</h1>
           <p className="text-lg">{title}</p>
           <p className="text-sm text-muted-foreground">{sub}</p>
         </div>

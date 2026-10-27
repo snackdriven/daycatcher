@@ -1,4 +1,4 @@
-# Meat-Suit Web App — Design Spec
+# Daycatcher Web App: Design Spec
 
 Status: **LOCKED. Building from this.**
 Branch: `gemini-llm` (web app changes ride alongside Gemini swap).
@@ -27,7 +27,7 @@ Branch: `gemini-llm` (web app changes ride alongside Gemini swap).
 
 ## 1. What this is
 
-A private web app. The only surface for the Meat-Suit brain. Telegram is gone (the old handlers are parked under `legacy/` for one commit so the diff is legible, then deleted). Everything new lives here.
+A private web app. The only surface for the Daycatcher brain. Telegram is gone (the old handlers are parked under `legacy/` for one commit so the diff is legible, then deleted). Everything new lives here.
 
 **What it is not:**
 - Not multi-user. One person, one brain. No accounts, no signup, no avatars.
@@ -199,7 +199,7 @@ New module: `meat_suit/api.py`. uvicorn binds to `WEB_BIND_HOST:WEB_PORT` (defau
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ [logo]  Meat-Suit              [CEO][Feral][Alm][Inn]   ☾   │  top bar
+│ [logo]  Daycatcher             [CEO][Feral][Alm][Inn]   ☾   │  top bar
 ├──────┬───────────────────────────────────────────────────────┤
 │      │                                                       │
 │  /   │     Today, 3:41 PM                                    │
@@ -322,7 +322,7 @@ Three sections:
 
 1. **Voice** — vibe selector (radio, 4 options with same card style as /personas).
 2. **Rhythm** — sleep window (weeknight/weekend cutoffs, two time pickers each), anti-PDA times (11:00 + 17:30, toggle on/off), nudge frequency.
-3. **Data** — export (downloads `meat_suit_export_YYYY-MM-DD.json`), reset chat history (confirm), reset everything (double-confirm).
+3. **Data**: export (downloads `daycatcher_export_YYYY-MM-DD.json`), reset chat history (confirm), reset everything (double-confirm).
 
 All forms use shadcn `Form` + Zod, mutations invalidate `/api/settings` and `/api/state`.
 

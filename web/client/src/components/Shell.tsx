@@ -61,7 +61,7 @@ function Nav({ location, unread }: { location: string; unread: number }) {
       <Link
         href="/"
         className="hidden sm:flex items-center justify-center mb-4 mt-1 size-10 rounded-md hover-elevate active-elevate-2"
-        aria-label="meat-suit home"
+        aria-label="Daycatcher home"
         data-testid="link-logo"
       >
         <Logo />
@@ -103,7 +103,7 @@ function Nav({ location, unread }: { location: string; unread: number }) {
 }
 
 function Logo() {
-  // Compact mark: a stacked rectangle (the suit) with a faint inner notch (the meat).
+  // Compact mark: a stacked rectangle with a faint inner notch.
   return (
     <svg
       viewBox="0 0 24 24"
@@ -113,7 +113,7 @@ function Logo() {
       strokeLinecap="round"
       strokeLinejoin="round"
       className="size-5 text-foreground"
-      aria-label="meat-suit"
+      aria-label="Daycatcher"
     >
       <rect x="4" y="6" width="16" height="14" rx="2" />
       <path d="M9 6V4a3 3 0 0 1 6 0v2" />

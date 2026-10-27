@@ -24,7 +24,7 @@ def main() -> None:
     # passcode-check below doesn't crash on a missing auth table.
     db.init_db(cfg.database_path)
 
-    print(f"meat-suit listening on http://{host}:{port}", file=sys.stderr)
+    print(f"daycatcher listening on http://{host}:{port}", file=sys.stderr)
     if not db.auth_has_passcode(cfg.database_path):
         print(
             f"first-run: open http://127.0.0.1:{port}/ to pick a passcode.",

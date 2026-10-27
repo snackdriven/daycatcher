@@ -1,8 +1,8 @@
-# Project Meat-Suit
+# Daycatcher
 
 Every app that wants to know about your life makes you tell it. "How are you feeling, on a scale of 1 to 10?" The act of being asked is the act that breaks the data.
 
-Meat-Suit takes the question out of the room.
+Daycatcher takes the question out of the room.
 
 You open a chat tab. There are four AI voices in it, and you pick whichever one you can stand that day. As far as that voice knows, the conversation evaporates the second you close the tab.
 
@@ -48,8 +48,8 @@ The Persona is a goldfish with opinions. Its memory is the last 20 messages. Scr
 ## Setup
 
 ```bash
-git clone https://github.com/snackdriven/meat-suit.git
-cd meat-suit
+git clone https://github.com/snackdriven/daycatcher.git
+cd daycatcher
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
@@ -107,7 +107,7 @@ Default bind is `127.0.0.1:5050`, localhost only. To reach it from your phone, r
 ## File map
 
 ```
-meat-suit/
+daycatcher/
 ├── run.py                      # boots FastAPI on uvicorn
 ├── requirements.txt
 ├── .env.example

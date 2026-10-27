@@ -6,7 +6,7 @@ clean structured data. The poll question/options stay constant for predictabilit
 """
 from __future__ import annotations
 
-POLL_QUESTION = "CURRENT MEAT-SUIT STATUS:"
+POLL_QUESTION = "CURRENT BODY STATUS:"
 
 POLL_OPTIONS: list[str] = [
     "Hydrated (Liar)",

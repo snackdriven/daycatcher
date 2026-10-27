@@ -135,7 +135,7 @@ NOTICE THINGS the user can't see from inside the week.
 What to look for:
 - Repeats. Did the same thing happen on more than one day. Did a button get
   tapped on three of seven days. Did 'forgot water' show up four times.
-- Adjacencies. The day after a hard work day, what happened to the meat-suit.
+- Adjacencies. The day after a hard work day, what happened to the body.
   Did a quiet day always follow a loud one. Did rabbit holes cluster on
   certain days.
 - Absences. What WASN'T in the week. No photos at all. No mentions of food on
