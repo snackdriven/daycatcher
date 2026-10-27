@@ -1,138 +1,62 @@
 # Daycatcher
 
-Every app that wants to know about your life makes you tell it. "How are you feeling, on a scale of 1 to 10?" The act of being asked is the act that breaks the data.
+You already told an assistant about your day. Possibly several assistants, in several windows, while doing something else entirely.
 
-Daycatcher takes the question out of the room.
+Then a journal app asks what happened today. Excellent question. There were tabs.
 
-You open a chat tab. There are four AI voices in it, and you pick whichever one you can stand that day. As far as that voice knows, the conversation evaporates the second you close the tab.
-
-Behind a wall it can't see through, a second program reads what you typed and pulls structure out of the exhaust. A third waits until 23:59 and writes the day's journal entry in your own cadence, then runs again Sunday at 22:00 for a paragraph about the week.
-
-What you get back is a journal you didn't write and a Sunday paragraph that knows things about your week you'd already forgotten.
+Daycatcher gathers conversation context from multiple assistants into a private journal. Keep talking wherever you normally talk. You don't have to pick one companion or remember to write the recap yourself.
 
 ---
 
-## The three minds
+## What it catches
 
-|     | Mind        | Job                                       | Sees                            |
-| --- | ----------- | ----------------------------------------- | ------------------------------- |
-| 1   | **Persona** | Banters with you in the chat tab          | the last 20 messages, nothing else |
-| 2   | **Scribe**  | Extracts JSON from chat exhaust every 30 min | raw transcripts only         |
-| 3   | **Weaver**  | Writes the daily journal at 23:59, the weekly recap on Sunday at 22:00 | the day or week's structured bundle |
+Personal Windows and a work Mac add high-level context to the same private journal.
 
-The Persona is a goldfish with opinions. Its memory is the last 20 messages. Scribe and Weaver are downstream of it and invisible to it.
+- **Codex and Claude Code:** hidden Python readers collect native local logs. The visible desktop apps can be closed.
+- **Regular Claude chats:** a hidden Electron bridge uses its own signed-in account session, independently of the visible Claude app. Bounded account reads and internal endpoint changes limit what it can catch.
+- **Work Mac:** local Codex and Claude Code collection, with a separate hourly journal job. Raw work transcripts stay on the Mac; only fixed context labels leave it.
+- **ChatGPT:** an hourly Codex app automation reads supported user messages. Each pass lists at most 50 recent mixed chats, selects up to five ChatGPT chats and reads at most ten turns each. Assistant bodies aren't available through this path. Codex and its connected ChatGPT reader need to be available; a separate ChatGPT window isn't needed.
+- **Dot:** its source-side producer sends fixed topic fragments through private `imports/dot/v1/YYYY-MM-DD.json` files. Its first real file and journal support were verified. Dot reports its hourly schedule saved and tested; the cloud scheduler hasn't been independently inspected.
+- **Muse:** planned, still unconnected. Source access, authentication and reliable original timestamps need verification.
+- **Hermes:** no journal connection. It isn't required for this to run.
 
----
-
-## The four voices
-
-- `the CEO` (C) — calm, clipped, faintly amused. Directives over hand-holding.
-- `the Feral BFF` (F) — loud, lowercase, will roast you with love. Minimal punctuation.
-- `the Almanac` (A) — spare, observational, steady cadence. Very few questions.
-- `the Innkeeper` (I) — soft, attentive, low-volume kindness. Hospitality cues.
+That's the verified setup as of October 27, 2026. Coverage is partial, including historical catch-up. A quiet collector result doesn't mean nothing happened.
 
 ---
 
-## The surfaces
+## How a day becomes a day
 
-**Chat.** Letter switcher in the top-right (`C / F / A / I`) swaps voices. The `?` opens a card explaining who's who. A check-in button drops a single in-character status line, no follow-up.
+Source timestamps determine the journal day, with **03:00 as the cutoff in America/Chicago**. The conversation at 01:00 still belongs to the day you haven't gone to bed from. The calendar can cope.
 
-**Journal.** Daily entries newest-first, with an unread dot when the Weaver ships one. Sunday entries get a weekly look-back ribbon.
+Local rules turn eligible messages into fixed labels; a fixed renderer adds journal context. Dot supplies dated topic fragments, so its journal day is kept without inventing individual message timestamps.
 
-**Data.** Quiet dashboard: total messages, current streak, percent-after-23:00, vibe distribution, sleep adherence dots, hourly density, this-week-vs-last-week.
+Entries describe discussion topics, with narrow rules for directly stated human reactions when authorship and content checks support them. Dot contributes topics only. Talking about testing doesn't establish that a test passed. Assistant suggestions don't become things you supposedly did.
 
-**Settings.** Default vibe (the UI's word for persona), sleep windows, nudge toggles, "snooze tonight," full JSON export, and a lock button that clears your session cookie.
-
----
-
-## Setup
-
-```bash
-git clone https://github.com/snackdriven/daycatcher.git
-cd daycatcher
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cd web && npm install && npm run build && cd ..
-cp .env.example .env
-python run.py
-```
-
-Open `http://127.0.0.1:5050/`. First boot is a setup screen for a 4-12 digit passcode. After that it's a login screen, then the chat.
-
-**LLM_API_KEY.** Default is Gemini's free tier. Grab one at <https://aistudio.google.com/apikey>, no card. Want OpenAI, Groq, or OpenRouter? Set `LLM_BASE_URL` and the model names; examples are commented in `.env.example`.
-
-The cookie key (`MEAT_SUIT_COOKIE_SECRET`) auto-generates on first boot and writes itself to `.env`.
-
-Forgot the passcode? Run `python -m meat_suit.reset_passcode` to wipe the hash and clear the lockout.
-
-**Lockout.** Five wrong passcodes locks the app for 15 minutes, global.
+Rich AI-written journal prose is still ahead. The current version is deliberately modest about what it knows.
 
 ---
 
-## Schedule (in your timezone)
+## The background part
 
-- Every 30 min — Scribe pass on new chat exhaust
-- 11:00 — anti-PDA nudge (skip with `NUDGES_ENABLED=0`)
-- 17:30 — anti-PDA nudge
-- 23:59 — Weaver writes and delivers the daily entry
-- Sunday 22:00 — Weaver delivers the weekly pattern paragraph
-- At each sleep cutoff — sleep nudge if you're still messaging past it
+The Windows collector starts after current-user sign-in. Its windowless journal job checks hourly while the PC is awake; the work Mac has its own local collector and hourly job. They don't wake sleeping machines. ChatGPT source reads have the additional Codex app dependency above.
 
-Nudges land in the chat as `system_nudge` rows on the next refresh. No push, no badge.
+Local classification and journal rendering use fixed rules. No new model API key is needed for the collector; source logins and GitHub authentication still are. Expired sign-in needs attention; workers don't take over the desktop to log in.
 
----
+Raw text stays in private local databases, or source-side for Dot. The journal receives fixed context marked partial. Raw transcripts aren't published here or to the journal.
 
-## Time awareness
-
-The Persona gets a small time note on every reply: day, part of day, whether it's a weekend evening, whether you're past your sleep cutoff. It's also told when you've been gone for several days, with instructions not to greet you or ask where you went.
-
-A nightly job watches the clock. If you're still messaging past your weeknight cutoff (default 23:00) or weekend cutoff (default 01:00), the active persona drops a single in-character sleep observation. It won't nag twice the same night. "Snooze tonight" in Settings kills only that night's nudge.
-
-The Weaver also gets a rhythm summary of when the day's chat clustered and the dates of any late-night sessions in the week it's writing about. Texture, not judgment.
+Separate work and personal receipts prevent duplicate paragraphs. Changes to imported evidence are flagged for review instead of quietly rewriting existing journal text. Collection and publication have separate stop controls.
 
 ---
 
-## Privacy
+## What's in this repo
 
-Everything lives in `./data/meatsuit.db`. Local SQLite, single file, no cloud. The passcode is an argon2id hash; the session cookie is httpOnly, signed, and expires 30 days after your last visit. The full JSON export under Settings dumps everything: messages, journal, vibe history, signals, sleep events, prefs.
+Daycatcher started as a four-voice chat app with a nightly journal writer. That original FastAPI/SQLite and Vite/React prototype is what's checked in here today.
 
----
+The working multi-source collector and Mac deployment currently live separately. **Cloning this repository does not install the collector or its scheduled jobs.** Packaging that setup into the repo is still to do.
 
-## Exposing it (optional)
+The [web prototype guide](docs/web-prototype.md) preserves its setup, commands and schedules. The [web design spec](WEB_APP_DESIGN.md) covers that earlier architecture. The prototype uses its own model endpoint and credentials; those aren't requirements of the current collector.
 
-Default bind is `127.0.0.1:5050`, localhost only. To reach it from your phone, run it behind a tunnel: Cloudflare Tunnel, Tailscale Funnel, or ngrok. Set `WEB_BIND_HOST=0.0.0.0` and `WEB_COOKIE_SECURE=1` only when the tunnel terminates HTTPS.
-
----
-
-## File map
-
-```
-daycatcher/
-├── run.py                      # boots FastAPI on uvicorn
-├── requirements.txt
-├── .env.example
-├── scripts/
-│   └── check_llm.py            # one-shot probe: does the LLM endpoint reply?
-├── meat_suit/                  # python backend
-│   ├── api.py                  # FastAPI app, auth + all routes + scheduler lifespan
-│   ├── config.py               # env loader
-│   ├── db.py                   # sqlite schema + helpers
-│   ├── scheduler.py            # APScheduler jobs (Scribe / Weaver / nudges / sleep)
-│   ├── time_ctx.py             # time + message-context notes for persona/weaver
-│   ├── nudges.py               # bait pools per persona
-│   ├── reset_passcode.py       # CLI: wipe stored hash + lockout
-│   ├── personas/
-│   │   └── catalog.py          # 4 personas as system prompts
-│   └── minds/
-│       ├── persona.py          # mind 1, chat
-│       ├── scribe.py           # mind 2, json extraction
-│       └── weaver.py           # mind 3, midnight ghostwriter
-├── web/                        # SPA, served by FastAPI on the same origin
-│   └── client/                 # vite + react + tailwind + shadcn
-└── legacy/                     # original telegram bot, not wired into anything
-```
-
----
+Existing `meat_suit` Python paths, database filename and session/environment names are kept for compatibility. The project is Daycatcher.
 
 ## License
 
