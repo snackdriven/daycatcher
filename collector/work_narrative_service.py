@@ -20,6 +20,11 @@ from journal_collector.narrative_evidence import export_day, day_window
 from journal_collector.local_work_model import OllamaSession, LocalModelError, LocalStop, process_export, MAX_MESSAGES, MAX_CHARS, STAGED_OUTPUT_ERRORS
 from journal_collector.work_moments import WorkMomentPublisher, validate_handoff, WorkMomentError
 from journal_collector.summary_publish import PublishError, GitHubTransport
+from journal_collector.work_language import POLICY
+
+
+STATE_NAME='state-controlled-v1.json'
+QUARANTINE_NAME='legacy-quarantine-controlled-v1.json'
 
 
 def _json(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
@@ -90,6 +95,73 @@ def _load(path,model,ollama_path):
     return value
 
 
+def _legacy_metadata(runtime,model,ollama_path):
+    path=runtime/'state.json'
+    if path.is_symlink():raise WorkMomentError('legacy_quarantine_conflict')
+    if not path.exists():return None
+    try:
+        if path.stat().st_size>4*1024*1024:raise ValueError()
+        blob=path.read_bytes();value=json.loads(blob.decode('utf-8'))
+        if (type(value) is not dict or set(value)!={'version','model','ollama','evidence','outbox'}
+                or type(value['version']) is not int or value['version']!=1
+                or value['model']!=model or value['ollama']!=str(ollama_path)
+                or type(value['evidence']) is not dict or type(value['outbox']) is not list):raise ValueError()
+        for key,item in value['evidence'].items():
+            if (type(key) is not str or type(item) is not dict or set(item)!={'day','revision','state'}
+                    or item['state'] not in {'processed','withheld','review_required'}
+                    or type(item['revision']) is not str):raise ValueError()
+            day_window(item['day'])
+        seen=set()
+        for item in value['outbox']:
+            if (type(item) is not dict or set(item)!={'id','day','payload','digest','state','evidence'}
+                    or item['state'] not in {'pending','delivered'} or item['id'] in seen
+                    or type(item['payload']) is not dict or item['payload'].get('day')!=item['day']
+                    or item['digest']!=_digest(item['payload']) or item['id']!=item['digest']
+                    or type(item['evidence']) is not list
+                    or any(key not in value['evidence'] for key in item['evidence'])):raise ValueError()
+            day_window(item['day']);seen.add(item['id'])
+        return {'version':1,'policy':POLICY,'legacy_sha256':hashlib.sha256(blob).hexdigest(),
+                'legacy_evidence':len(value['evidence']),'legacy_outbox':len(value['outbox']),
+                'legacy_pending':sum(item['state']=='pending' for item in value['outbox']),
+                'legacy_delivered':sum(item['state']=='delivered' for item in value['outbox'])}
+    except (OSError,ValueError,TypeError,KeyError,UnicodeError):
+        raise WorkMomentError('legacy_owner_or_ledger_mismatch') from None
+
+
+def _legacy_gate(runtime,model,ollama_path):
+    expected=_legacy_metadata(runtime,model,ollama_path)
+    if expected is None:return
+    marker=runtime/QUARANTINE_NAME
+    if not marker.is_file() or marker.is_symlink():raise WorkMomentError('legacy_quarantine_required')
+    try:
+        if marker.stat().st_size>4096 or json.loads(marker.read_text(encoding='utf-8'))!=expected:raise ValueError()
+    except (OSError,ValueError,TypeError):raise WorkMomentError('legacy_quarantine_conflict') from None
+
+
+def quarantine_legacy(config,*,model,ollama_path):
+    """Explicit stopped migration. Keep all old bytes/indexes/receipts untouched.
+
+    The new policy separately reprocesses eligible current/previous journal days.
+    No source database, cursor, exclusion, historical ledger or job is reset.
+    """
+    data,runtime=_runtime(config)
+    if not (data/'work-narrative-STOP').is_file():raise WorkMomentError('legacy_quarantine_requires_stop')
+    lock=worker_lock(runtime/'.worker')
+    try:lock.__enter__()
+    except RuntimeError:return {'state':'busy'}
+    try:
+        expected=_legacy_metadata(runtime,model,ollama_path)
+        if expected is None:return {'state':'no_legacy','policy':POLICY}
+        marker=runtime/QUARANTINE_NAME;state=runtime/STATE_NAME
+        if marker.exists():_legacy_gate(runtime,model,ollama_path)
+        elif state.exists():raise WorkMomentError('legacy_quarantine_conflict')
+        else:_write(marker,expected)
+        fresh=_load(state,model,ollama_path)
+        if not state.exists():_write(state,fresh)
+        return dict(expected,state='quarantined')
+    finally:lock.__exit__(None,None,None)
+
+
 def _days(day,now=None):
     if day is not None:day_window(day);return [day]
     local=(datetime.now(timezone.utc) if now is None else now).astimezone(ZoneInfo('America/Chicago'))
@@ -146,7 +218,8 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
     def publisher():
         return publisher_factory(gh_path,transport=StopGuardedTransport(GitHubTransport(gh_path),stop))
     try:
-        ledger_path=runtime/'state.json';ledger=_load(ledger_path,model,ollama_path)
+        _legacy_gate(runtime,model,ollama_path)
+        ledger_path=runtime/STATE_NAME;ledger=_load(ledger_path,model,ollama_path)
         days=_days(day,now)
         for record in ledger['outbox']:
             if record['state']=='pending' and record['day'] not in days:days.append(record['day'])
@@ -221,6 +294,7 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
         status['state']='stopped';return report()
     except Exception as error:
         codes={'network','auth','privacy','conflict','verification','review_required',
+               'legacy_quarantine_required','legacy_quarantine_conflict','legacy_owner_or_ledger_mismatch',
                'local_model_unverified','local_model_unavailable','local_model_request_failed',
                'local_model_invalid_output','local_model_batch_bounds','local_model_review_required',
                'local_model_timeout','local_model_response_too_large','local_model_redirect_refused'}|STAGED_OUTPUT_ERRORS
@@ -236,7 +310,8 @@ def verify_published(config,*,model,ollama_path,gh_path,publisher_factory=WorkMo
     """Read-only proof for installer start; STOP intentionally does not block it."""
     data=Path(config['data_dir']).resolve();runtime=data/'work-narrative'
     if runtime.is_symlink():raise ValueError('runtime_binding')
-    ledger=_load(runtime/'state.json',model,ollama_path)
+    _legacy_gate(runtime,model,ollama_path)
+    ledger=_load(runtime/STATE_NAME,model,ollama_path)
     for record in reversed(ledger['outbox']):
         if record['state']!='delivered' or not record['payload']['moments']:continue
         publisher=publisher_factory(gh_path)
@@ -261,11 +336,15 @@ def main(argv=None):
     parser.add_argument('--day');parser.add_argument('--publish',action='store_true')
     parser.add_argument('--once',action='store_true',help='One bounded pass (the default)')
     parser.add_argument('--dry-run',action='store_true');parser.add_argument('--verify-handoff-only',action='store_true')
+    parser.add_argument('--quarantine-legacy',action='store_true')
     args=parser.parse_args(argv)
     try:
         if args.publish and args.dry_run:raise ValueError('conflicting_modes')
         config=load_config(args.config.resolve())
-        if args.verify_handoff_only:
+        if args.quarantine_legacy:
+            if args.publish or args.verify_handoff_only:raise ValueError('conflicting_modes')
+            result=quarantine_legacy(config,model=args.model,ollama_path=args.ollama)
+        elif args.verify_handoff_only:
             if not args.gh or not Path(args.gh).is_absolute():raise ValueError('publish_gh_required')
             result=verify_published(config,model=args.model,ollama_path=args.ollama,gh_path=args.gh)
         else:result=execute(config,model=args.model,ollama_path=args.ollama,gh_path=args.gh,day=args.day,publish=args.publish)

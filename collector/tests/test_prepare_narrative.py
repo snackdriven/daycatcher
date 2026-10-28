@@ -11,7 +11,13 @@ import zoneinfo
 
 from journal_collector.store import Store
 from journal_collector.narrative_publish import NarrativePublisher, effective_manifest
+from journal_collector.work_language import render_description
+from journal_collector.work_moments import validate_handoff
 from prepare_narrative import prepare, main
+
+
+WORK_TEXT=render_description('intent','check','test_environment','none','none')
+WORK_ID='a'*32
 
 
 class FakeGH:
@@ -70,13 +76,17 @@ class PrepareTests(unittest.TestCase):
 
     def test_work_handoff_validated_and_never_substituted_for_missing(self):
         path='imports/work-moments/v1/2026-10-27.json'
-        self.gh.files[path]={'content':b'{"candidate":true}','sha':'c'*40}
+        wire={'version':1,'day':'2026-10-27','timezone':'America/Chicago','cutoff':'03:00',
+              'source':'work','processing':'on-device','coverage':'partial',
+              'moments':[{'id':WORK_ID,'text':WORK_TEXT,'time':'2026-10-27T15:00:00Z',
+                          'kind':'intent','sanitized':True}]}
+        self.gh.files[path]={'content':json.dumps(wire).encode(),'sha':'c'*40}
         calls=[]
-        work={'id':'work_1','day':'2026-10-27','source':'work','sanitized':True,'text':'I tried a workflow fix.',
-              'time':'2026-10-27T15:00:00Z','kind':'attempt'}
-        def validator(value,**kwargs):calls.append(value);return {'version':1,'day':'2026-10-27','evidence':[work]}
+        work={'id':WORK_ID,'day':'2026-10-27','source':'work','sanitized':True,'text':WORK_TEXT,
+              'time':'2026-10-27T15:00:00Z','kind':'intent'}
+        def validator(value,**kwargs):calls.append(value);return validate_handoff(value,**kwargs)
         result=self.run_prepare(work_validator=validator)
-        self.assertEqual([{'candidate':True}],calls)
+        self.assertEqual([wire],calls)
         self.assertEqual([work],self.bundle(result)['work_evidence'])
         self.assertEqual('ready',result['work_state'])
         self.gh.files.pop(path)
@@ -92,10 +102,16 @@ class PrepareTests(unittest.TestCase):
 
     def test_work_stop_skips_fetch_and_replaces_active_bad_work_input_with_personal_only(self):
         path='imports/work-moments/v1/2026-10-27.json'
-        self.gh.files[path]={'content':b'{}','sha':'c'*40}
+        # Simulate a pre-policy local input cache; do not bless legacy freeform
+        # through the current validator simply to set up this pause regression.
+        first=self.run_prepare()
         work={'id':'work_1','day':'2026-10-27','source':'work','sanitized':True,
               'text':'Synthetic private label should stay out.','time':'2026-10-27T15:00:00Z','kind':'attempt'}
-        first=self.run_prepare(work_validator=lambda *a,**kw:{'version':1,'day':'2026-10-27','evidence':[work]})
+        cached=self.bundle(first);cached['work_evidence']=[work]
+        Path(first['input']).write_text(json.dumps(cached),encoding='utf-8')
+        manifest=json.loads(Path(first['manifest']).read_text());manifest['evidence'].append(work)
+        Path(first['manifest']).write_text(json.dumps(manifest),encoding='utf-8')
+        self.gh.files[path]={'content':b'{"legacy_freeform":"Synthetic private label should stay out."}','sha':'c'*40}
         self.assertEqual(1,len(self.bundle(first)['work_evidence']))
         (self.data/'work-handoff-STOP').touch();self.gh.reads.clear()
         result=self.run_prepare(work_validator=lambda *a,**kw:self.fail('paused validator must not run'))
@@ -110,11 +126,11 @@ class PrepareTests(unittest.TestCase):
     def test_work_stop_preserves_verified_old_work_only_and_never_replays_pending_work(self):
         path='imports/work-moments/v1/2026-10-27.json'
         self.gh.files[path]={'content':b'{}','sha':'c'*40}
-        work={'id':'work_1','day':'2026-10-27','source':'work','sanitized':True,'text':'I tried a workflow fix.',
-              'time':'2026-10-27T15:00:00Z','kind':'attempt'}
+        work={'id':WORK_ID,'day':'2026-10-27','source':'work','sanitized':True,'text':WORK_TEXT,
+              'time':'2026-10-27T15:00:00Z','kind':'intent'}
         first=self.run_prepare(work_validator=lambda *a,**kw:{'version':1,'day':'2026-10-27','evidence':[work]})
         manifest=json.loads(Path(first['manifest']).read_text())
-        entry={'version':1,'day':'2026-10-27','paragraphs':[{'text':'I tried a workflow fix.','evidence_ids':['work_1']}]}
+        entry={'version':1,'day':'2026-10-27','paragraphs':[{'text':WORK_TEXT,'evidence_ids':[WORK_ID]}]}
         receipts=self.data/'narrative-writer'/'receipts.sqlite3'
         NarrativePublisher('gh',receipts,transport=self.gh).publish(entry,manifest)
         (self.data/'work-handoff-STOP').touch();self.gh.reads.clear()
@@ -181,11 +197,11 @@ class PrepareTests(unittest.TestCase):
     def test_missing_new_work_preserves_only_prior_receipt_verified_work_support(self):
         path='imports/work-moments/v1/2026-10-27.json'
         self.gh.files[path]={'content':b'{}','sha':'c'*40}
-        work={'id':'work_1','day':'2026-10-27','source':'work','sanitized':True,'text':'I tried a workflow fix.',
-              'time':'2026-10-27T15:00:00Z','kind':'attempt'}
+        work={'id':WORK_ID,'day':'2026-10-27','source':'work','sanitized':True,'text':WORK_TEXT,
+              'time':'2026-10-27T15:00:00Z','kind':'intent'}
         first=self.run_prepare(work_validator=lambda *a,**kw:{'version':1,'day':'2026-10-27','evidence':[work]})
         manifest=json.loads(Path(first['manifest']).read_text(encoding='utf-8'))
-        entry={'version':1,'day':'2026-10-27','paragraphs':[{'text':'I tried a workflow fix.','evidence_ids':['work_1']}]}
+        entry={'version':1,'day':'2026-10-27','paragraphs':[{'text':WORK_TEXT,'evidence_ids':[WORK_ID]}]}
         NarrativePublisher('gh',self.data/'narrative-writer'/'receipts.sqlite3',transport=self.gh).publish(entry,manifest)
         del self.gh.files[path]
         second=self.run_prepare()

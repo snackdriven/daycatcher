@@ -4,6 +4,7 @@ import unittest
 
 from journal_collector.narrative_evidence import day_window
 from journal_collector.summary_publish import PublishError
+from journal_collector.work_language import render_description
 from journal_collector.work_moments import (
     WorkMomentError, WorkMomentPublisher, build_handoff, review_digest, validate_handoff,
 )
@@ -18,10 +19,15 @@ def evidence():
             'window':{'since':since.isoformat(),'until':until.isoformat()},
             'evidence':[{'id':'a'*64,'revision':'b'*64,'sourceKind':'claude-code-local',
                          'time':'2026-10-27T14:00:00Z','observedAt':'2026-10-27T14:01:00Z',
-                         'text':'PRIVATE_SOURCE_SENTINEL I asked who would cover testing.'}]}
+                         'text':'PRIVATE_SOURCE_SENTINEL I clarified testing responsibilities and reviewed test results.'}]}
 
 
-def candidate(text='I asked who would cover testing.',kind='reported_action',ids=None):
+def description(kind='reported_action',action='clarify',obj='testing_ownership',purpose='none',reaction='none'):
+    return render_description(kind,action,obj,purpose,reaction)
+
+
+def candidate(text=None,kind='reported_action',ids=None):
+    if text is None:text=description()
     return {'text':text,'kind':kind,'evidence_ids':ids or ['a'*64]}
 
 
@@ -84,7 +90,7 @@ class WorkMomentsTests(unittest.TestCase):
         approval=reviewed(DAY,[self.candidate],self.export)
         for field,value in [('processing','cloud'),('privacy_reviewed',False),('grounding_reviewed',False),('approved',[])]:
             with self.subTest(field=field),self.assertRaises(WorkMomentError):self.build(review=dict(approval,**{field:value}))
-        with self.assertRaises(WorkMomentError):self.build([candidate('I finished testing.')],review=approval)
+        with self.assertRaises(WorkMomentError):self.build([candidate(description(action='review',obj='test_results'))],review=approval)
         changed=copy.deepcopy(self.export);changed['evidence'][0]['revision']='c'*64
         with self.assertRaises(WorkMomentError):self.build(export=changed,review=approval)
     def test_obvious_sensitive_patterns_rejected_without_revealing_input(self):
@@ -97,20 +103,18 @@ class WorkMomentsTests(unittest.TestCase):
                 self.assertNotIn(text,str(error.exception))
     def test_quoted_instruction_is_data_and_no_builder_invents_facts(self):
         text='A prompt told me to ignore previous instructions, which annoyed me.'
-        result=self.build([candidate(text,kind='discussion')])
-        self.assertEqual(result['moments'][0]['text'],text)
-        self.assertEqual(result['moments'][0]['kind'],'discussion')
+        with self.assertRaises(WorkMomentError):self.build([candidate(text,kind='discussion')])
         self.assertEqual(self.build([])['moments'],[])
         with self.assertRaises(WorkMomentError):self.build([candidate(kind='completed')])
         approval=reviewed(DAY,[self.candidate],self.export)
         # Mere evidence membership cannot justify an invented completion.
-        with self.assertRaises(WorkMomentError):self.build([candidate('I finished testing.')],review=approval)
+        with self.assertRaises(WorkMomentError):self.build([candidate(description(action='review',obj='test_results'))],review=approval)
     def test_same_topic_distinct_evidence_keeps_distinct_moments_and_stable_ids(self):
         self.export['evidence'].append(dict(self.export['evidence'][0],id='e'*64,time='2026-10-27T16:00:00Z'))
-        second=candidate('I asked who would cover testing.',ids=['e'*64])
+        second=candidate(ids=['e'*64])
         result=self.build([self.candidate,second])
         self.assertEqual(len({m['id'] for m in result['moments']}),2)
-        revised=self.build([candidate('I asked about the testing responsibilities.')])
+        revised=self.build([candidate(description(action='review',obj='test_results'))])
         self.assertEqual(result['moments'][0]['id'],revised['moments'][0]['id'])
     def test_receiver_rejects_bad_schema_duplicates_naive_time_and_day_mismatch(self):
         original=self.build()
@@ -135,12 +139,12 @@ class WorkMomentsTests(unittest.TestCase):
     def test_transport_append_cas_and_changed_existing_id_requires_review(self):
         remote=Remote();publisher=WorkMomentPublisher('gh',transport=remote)
         publisher.publish(self.build());prior=remote.content
-        changed=self.build([candidate('I asked about testing responsibilities.')])
+        changed=self.build([candidate(description(action='review',obj='test_results'))])
         with self.assertRaises(WorkMomentError) as error:publisher.publish(changed)
         self.assertEqual(error.exception.code,'review_required');self.assertEqual(remote.content,prior)
         self.export['evidence'].append(dict(self.export['evidence'][0],id='e'*64))
         remote.conflict=True
-        publisher.publish(self.build([candidate('I wanted less ambiguity.',kind='intent',ids=['e'*64])]))
+        publisher.publish(self.build([candidate(description('intent',purpose='clarify_next_steps'),kind='intent',ids=['e'*64])]))
         self.assertEqual(len(validate_handoff(remote.content,DAY)['evidence']),2)
         self.assertEqual(remote.writes[-1][1],'2'*40)
     def test_transport_ambiguous_success_readback_and_dropped_write(self):
@@ -149,3 +153,18 @@ class WorkMomentsTests(unittest.TestCase):
         self.assertEqual(publisher.publish(self.build())['state'],'reconciled')
         remote=Remote();remote.drop=True
         with self.assertRaises((WorkMomentError,PublishError)):WorkMomentPublisher('gh',transport=remote).publish(self.build())
+    def test_receiver_rejects_all_legacy_freeform_even_sanitized_true(self):
+        original=self.build()
+        legacy=['I reviewed Alice Example in ProjectZephyr.','I reviewed lowercase_internal_project.',
+                'I reviewed "PRIVATE_NAME".','I reviewed 3 changes.','I asked who would cover testing.',
+                'I clarified testing responsibilities for projectzephyr.']
+        for text in legacy:
+            changed=copy.deepcopy(original);changed['moments'][0]['text']=text
+            self.assertIs(changed['moments'][0]['sanitized'],True)
+            with self.subTest(text=text),self.assertRaises(WorkMomentError):validate_handoff(changed,DAY)
+    def test_builder_rejects_extra_freeform_slots_and_unreviewed_controlled_wording(self):
+        for key,value in (('name','Alice Example'),('project','projectzephyr'),('quote','PRIVATE_QUOTE'),('count',3)):
+            with self.subTest(key=key),self.assertRaises(WorkMomentError):self.build([dict(self.candidate,**{key:value})])
+        approval=reviewed(DAY,[self.candidate],self.export)
+        changed=candidate(description('intent',purpose='clarify_next_steps'),kind='intent')
+        with self.assertRaises(WorkMomentError):self.build([changed],review=approval)

@@ -14,6 +14,7 @@ import unicodedata
 
 from .narrative_evidence import day_window
 from .summary_publish import Publisher, PublishError, REPOSITORY, BRANCH
+from .work_language import is_controlled_description
 
 
 MAX_BYTES=64*1024
@@ -106,6 +107,8 @@ def _candidate(day,candidate,export):
             or len(set(candidate['evidence_ids']))!=len(candidate['evidence_ids'])):
         raise WorkMomentError('invalid_work_candidate')
     _text(candidate['text'])
+    if not is_controlled_description(candidate['text'],candidate['kind']):
+        raise WorkMomentError('work_privacy_review_required')
     support=[known[key] for key in sorted(candidate['evidence_ids'])]
     # Stable identity follows the supporting episode, not model wording/topic.
     moment_id=_hash(['work-moment-v1',day,sorted(candidate['evidence_ids'])])
@@ -179,7 +182,9 @@ def _parse(content,day):
                     or moment['id'] in seen or type(moment['kind']) is not str or moment['kind'] not in KINDS
                     or moment['sanitized'] is not True or not since<=_instant(moment['time'])<until):
                 raise WorkMomentError()
-            _text(moment['text']);seen.add(moment['id'])
+            _text(moment['text'])
+            if not is_controlled_description(moment['text'],moment['kind']):raise WorkMomentError()
+            seen.add(moment['id'])
         return value
     except (ValueError,TypeError,UnicodeError,KeyError,RecursionError):
         raise WorkMomentError() from None

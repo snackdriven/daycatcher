@@ -12,6 +12,7 @@ from unittest.mock import Mock, MagicMock, patch
 from journal_collector.narrative_evidence import day_window
 from journal_collector.local_work_model import LocalModelError, LocalStop, OllamaSession, process_export
 from journal_collector.work_moments import WorkMomentError, build_handoff
+from journal_collector.work_language import render_description
 
 
 def export():
@@ -20,7 +21,11 @@ def export():
             'window':{'since':start.isoformat(),'until':end.isoformat()},
             'evidence':[{'id':'a'*64,'revision':'b'*64,'sourceKind':'claude-code-local',
                          'time':'2026-10-27T14:00:00Z','observedAt':'2026-10-27T14:01:00Z',
-                         'text':'PRIVATE_WORK_NAME I asked who was covering testing.'}]}
+                         'text':'I clarified testing responsibilities. PRIVATE_WORK_NAME'}]}
+
+
+def slots(kind='reported_action',ids=None,action='clarify',obj='testing_ownership',purpose='none',reaction='none'):
+    return {'kind':kind,'operation':action+'_'+obj,'purpose':purpose,'reaction':reaction,'evidence_ids':ids or ['m1']}
 
 
 class Client:
@@ -29,7 +34,7 @@ class Client:
     def chat(self,instructions,payload,schema):
         self.calls.append((instructions,payload,schema))
         if len(self.calls)%2:
-            return {'moments':[{'text':'I asked who was covering testing.','kind':'reported_action','evidence_ids':['m1']}]}
+            return {'moments':[slots()]}
         return {'reviews':[{'candidate':'c1','privacy_safe':self.privacy,'grounded':self.grounded}]}
 
 
@@ -50,9 +55,8 @@ class LocalWorkModelTests(unittest.TestCase):
                 self.assertEqual(result['withheld'],1)
                 self.assertEqual(result['withheld_ids'],['a'*64])
     def test_model_metadata_unknown_support_and_nonboolean_review_rejected(self):
-        for item in [dict(text='I tested.',kind='reported_action',evidence_ids=['raw']),
-                     dict(text='I tested.',kind='reported_action',evidence_ids=['m1'],time='fake'),
-                     dict(text='I tested.',kind='completed',evidence_ids=['m1'])]:
+        for item in [slots(ids=['raw']),dict(slots(),time='fake'),slots(kind='completed'),
+                     dict(slots(),text='PRIVATE_USERNAME PRIVATE_PROJECT')]:
             client=Client();client.chat=Mock(return_value={'moments':[item]})
             with self.subTest(item=item),self.assertRaises(LocalModelError):process_export(export(),client)
         with self.assertRaises(LocalModelError):process_export(export(),Client(privacy=1))
@@ -153,8 +157,7 @@ class LocalWorkModelTests(unittest.TestCase):
         value=export();base=value['evidence'][0]
         value['evidence']=[dict(base,id=f'{n:064x}',text=f'RAW_UNIQUE_{n} I asked about testing.') for n in range(1,6)]
         client=Client();client.chat=Mock(side_effect=[{'moments':[
-            {'text':f'I discussed a testing question {n}.','kind':'discussion',
-             'evidence_ids':[f'm{j+1}' for j in range(5) if j!=n]} for n in range(5)]},
+            slots(kind='discussion',ids=[f'm{j+1}' for j in range(5) if j!=n]) for n in range(5)]},
             {'reviews':[{'candidate':f'c{n+1}','privacy_safe':False,'grounded':False} for n in range(5)]}])
         result=process_export(value,client)
         review=client.chat.call_args_list[1].args[1]
@@ -169,9 +172,9 @@ class LocalWorkModelTests(unittest.TestCase):
         with self.assertRaises(LocalModelError) as error:process_export(value,client)
         self.assertEqual(error.exception.code,'local_model_batch_bounds');self.assertEqual(client.calls,[])
         value=export();base=value['evidence'][0]
-        value['evidence']=[dict(base,id=f'{n:064x}',text='é'*10900 if n==1 else 'I asked about testing.') for n in range(1,6)]
+        value['evidence']=[dict(base,id=f'{n:064x}',text='é'*11900 if n==1 else 'I asked about testing.') for n in range(1,6)]
         client.chat=Mock(return_value={'moments':[
-            {'text':'界'*600,'kind':'discussion','evidence_ids':[f'm{n+1}']} for n in range(5)]})
+            slots(kind='discussion',ids=[f'm{n+1}']) for n in range(5)]})
         with self.assertRaises(LocalModelError) as error:process_export(value,client)
         self.assertEqual(error.exception.code,'local_model_batch_bounds');self.assertEqual(client.chat.call_count,1)
     def test_dynamic_schemas_constrain_supported_aliases_and_exact_review_ids_count(self):
@@ -203,13 +206,13 @@ class LocalWorkModelTests(unittest.TestCase):
             self.assertEqual(error.exception.code,'local_model_batch_bounds')
             session._request.assert_not_called()
     def test_fixed_diagnostic_distinguishes_stage_reason_without_raw_output(self):
-        malformed=[({'moments':[{'text':'PRIVATE_SECRET','kind':'discussion','evidence_ids':['hallucinated-id']}]},
+        malformed=[({'moments':[slots(kind='discussion',ids=['hallucinated-id'])]},
                     None,'local_model_extraction_unknown_support'),
-                   ({'moments':[{'text':'I asked about testing.','kind':'discussion','evidence_ids':['m1']}]},
+                   ({'moments':[slots(kind='discussion')]},
                     {'reviews':[]},'local_model_review_count'),
-                   ({'moments':[{'text':'I asked about testing.','kind':'discussion','evidence_ids':['m1']}]},
+                   ({'moments':[slots(kind='discussion')]},
                     {'reviews':[{'candidate':'hallucinated-id','privacy_safe':True,'grounded':True}]},'local_model_review_unknown_candidate'),
-                   ({'moments':[{'text':'I asked about testing.','kind':'discussion','evidence_ids':['m1']}]},
+                   ({'moments':[slots(kind='discussion')]},
                     {'reviews':[{'candidate':'c1','privacy_safe':'PRIVATE_SECRET','grounded':True}]},'local_model_review_boolean')]
         for first,second,code in malformed:
             client=Client();client.chat=Mock(side_effect=[first,second])
@@ -219,41 +222,36 @@ class LocalWorkModelTests(unittest.TestCase):
     def test_duplicate_episode_wordings_are_all_withheld_without_hiding_unique_candidate(self):
         value=export();value['evidence'].append(dict(value['evidence'][0],id='e'*64))
         client=Client();client.chat=Mock(side_effect=[{'moments':[
-            {'text':'I discussed testing.','kind':'discussion','evidence_ids':['m1']},
-            {'text':'I asked about testing.','kind':'reported_action','evidence_ids':['m1']},
-            {'text':'I wanted clearer responsibilities.','kind':'intent','evidence_ids':['m2']}]},
+            slots(kind='discussion'),slots(),slots(kind='intent',ids=['m2'],action='review',obj='open_changes')]},
             {'reviews':[{'candidate':'c1','privacy_safe':True,'grounded':True}]}])
         result=process_export(value,client)
         self.assertEqual(result['withheld'],2)
         self.assertEqual(result['withheld_ids'],['a'*64]);self.assertEqual(result['approved_ids'],['e'*64])
-        self.assertEqual([m['text'] for m in result['handoff']['moments']],['I wanted clearer responsibilities.'])
+        self.assertEqual([m['text'] for m in result['handoff']['moments']],['I wanted to review open changes.'])
         review=client.chat.call_args_list[1].args[1]
         self.assertEqual([c['evidence_ids'] for c in review['candidates']],[['m2']])
-    def test_strict_privacy_rejection_withholds_exact_text_before_independent_review(self):
+    def test_invalid_controlled_combinations_are_withheld_before_independent_review(self):
         value=export();value['evidence'].append(dict(value['evidence'][0],id='e'*64))
-        for invalid in ('I asked\nabout testing.',' I asked about testing.','Read TEAM-123.'):
+        for invalid in (slots(action='experience',obj='work'),slots(reaction='frustrated'),slots(kind='explicit_reaction')):
             client=Client();client.chat=Mock(side_effect=[{'moments':[
-                {'text':invalid,'kind':'discussion','evidence_ids':['m1']},
-                {'text':'I wanted clearer responsibilities.','kind':'intent','evidence_ids':['m2']}]},
+                invalid,slots(kind='intent',ids=['m2'],action='review',obj='open_changes')]},
                 {'reviews':[{'candidate':'c1','privacy_safe':True,'grounded':True}]}])
             with self.subTest(invalid=invalid):
                 result=process_export(value,client)
                 self.assertEqual(result['withheld'],1);self.assertEqual(result['approved_ids'],['e'*64])
                 review=client.chat.call_args_list[1].args[1]
-                self.assertEqual([c['text'] for c in review['candidates']],['I wanted clearer responsibilities.'])
-                self.assertNotIn(invalid,json.dumps(result['handoff']))
+                self.assertEqual([c['text'] for c in review['candidates']],['I wanted to review open changes.'])
     def test_approved_support_prevails_over_withheld_overlap(self):
         value=export();value['evidence'].append(dict(value['evidence'][0],id='e'*64))
         client=Client();client.chat=Mock(side_effect=[{'moments':[
-            {'text':'Read TEAM-123.','kind':'discussion','evidence_ids':['m1']},
-            {'text':'I asked about testing responsibilities.','kind':'reported_action','evidence_ids':['m1','m2']}]},
+            slots(action='experience',obj='work'),slots(ids=['m1','m2'])]},
             {'reviews':[{'candidate':'c1','privacy_safe':True,'grounded':True}]}])
         result=process_export(value,client)
         self.assertEqual(result['withheld'],1);self.assertEqual(result['withheld_ids'],[])
         self.assertEqual(result['approved_ids'],['a'*64,'e'*64]);self.assertEqual(len(result['handoff']['moments']),1)
     def test_all_duplicate_episodes_abstain_without_semantic_call_or_wording_choice(self):
         client=Client();client.chat=Mock(return_value={'moments':[
-            {'text':text,'kind':'discussion','evidence_ids':['m1']} for text in ('I asked about testing.','I discussed testing.')]})
+            slots(kind=kind) for kind in ('reported_action','discussion')]})
         result=process_export(export(),client)
         self.assertEqual(result['handoff']['moments'],[]);self.assertEqual(result['withheld'],2)
         self.assertEqual(client.chat.call_count,1)
@@ -274,10 +272,8 @@ class LocalWorkModelTests(unittest.TestCase):
         value=export();base=value['evidence'][0]
         value['evidence']=[base,dict(base,id='e'*64),dict(base,id='f'*64)]
         client=Client();client.chat=Mock(side_effect=[{'moments':[
-            {'text':'Read TEAM-123.','kind':'discussion','evidence_ids':['m1']},
-            {'text':'I discussed testing.','kind':'discussion','evidence_ids':['m1']},
-            {'text':'I wanted clearer responsibilities.','kind':'intent','evidence_ids':['m2']},
-            {'text':'I asked about testing responsibilities.','kind':'reported_action','evidence_ids':['m3']}]},
+            slots(action='experience',obj='work'),slots(kind='discussion'),
+            slots(kind='intent',ids=['m2']),slots(ids=['m3'])]},
             {'reviews':[{'candidate':'c1','privacy_safe':False,'grounded':True},
                         {'candidate':'c2','privacy_safe':True,'grounded':True}]}])
         result=process_export(value,client)
@@ -287,3 +283,31 @@ class LocalWorkModelTests(unittest.TestCase):
         self.assertEqual(result['withheld'],sum(result[k] for k in ('withheld_privacy','withheld_duplicate','withheld_semantic')))
         self.assertEqual(len(result['handoff']['moments']),1)
         self.assertNotIn('withheld_privacy',result['handoff'])
+    def test_no_free_text_slots_or_unknown_names_even_when_model_review_would_approve(self):
+        for item in (dict(slots(),text='I reviewed PRIVATE_USERNAME and PRIVATE_PROJECT.'),
+                     dict(slots(),operation='PRIVATE_PROJECT'),dict(slots(),purpose='PRIVATE_USERNAME')):
+            client=Client();client.chat=Mock(return_value={'moments':[item]})
+            with self.subTest(item=item),self.assertRaises(LocalModelError):process_export(export(),client)
+            self.assertEqual(client.chat.call_count,1)
+        client=Client();result=process_export(export(),client)
+        schema=client.calls[0][2]['properties']['moments']['items']
+        self.assertNotIn('text',schema['properties'])
+        for key in ('kind','operation','purpose','reaction'):self.assertTrue(schema['properties'][key]['enum'])
+        self.assertEqual(result['handoff']['moments'][0]['text'],'I clarified testing responsibilities.')
+    def test_completion_requires_literal_past_report_without_modal_or_future_support(self):
+        for text in ('I need to clarify testing responsibilities.','Please review the changes.',
+                     'I clarified testing responsibilities but I should check again.',
+                     'I worked on something.', 'Someone said I clarified testing responsibilities.'):
+            value=export();value['evidence'][0]['text']=text;client=Client()
+            with self.subTest(text=text):
+                result=process_export(value,client)
+                self.assertEqual(result['handoff']['moments'],[]);self.assertEqual(result['withheld_semantic'],1)
+                self.assertEqual(len(client.calls),1)
+    def test_reaction_requires_literal_first_person_selected_reaction(self):
+        for text,expected in [('I am pleased.',0),('I am not frustrated.',0),("I'm frustrated.",1)]:
+            value=export();value['evidence'][0]['text']=text
+            client=Client();client.chat=Mock(side_effect=[{'moments':[slots(kind='explicit_reaction',action='experience',obj='work',reaction='frustrated')]},
+                {'reviews':[{'candidate':'c1','privacy_safe':True,'grounded':True}]}])
+            with self.subTest(text=text):
+                result=process_export(value,client)
+                self.assertEqual(len(result['handoff']['moments']),expected)

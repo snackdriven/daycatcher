@@ -14,7 +14,7 @@ from journal_collector.runtime import worker_lock
 from journal_collector.summary_publish import PublishError
 from journal_collector.local_work_model import LocalStop
 from journal_collector.narrative_evidence import day_window
-from test_local_work_model import export, Client
+from test_local_work_model import export, Client, slots
 
 
 class Context(Client):
@@ -46,7 +46,7 @@ class WorkNarrativeServiceTests(unittest.TestCase):
         result=self.run_service(publish=True,gh_path='/synthetic/gh')
         self.assertEqual(result['delivered'],1);self.assertEqual(len(self.client.calls),2)
         self.assertEqual(self.db.read_bytes(),b'UNTOUCHED SOURCE')
-        ledger=json.loads((self.data/'work-narrative'/'state.json').read_text())
+        ledger=json.loads((self.data/'work-narrative'/service.STATE_NAME).read_text())
         self.assertEqual(ledger['outbox'][0]['state'],'delivered')
     def test_publish_failure_retries_exact_frozen_payload_no_model_regeneration(self):
         captured=[]
@@ -100,14 +100,13 @@ class WorkNarrativeServiceTests(unittest.TestCase):
     def test_partial_withholding_publishes_safe_other_moment(self):
         self.export['evidence'].append(dict(self.export['evidence'][0],id='e'*64))
         self.client.chat=Mock(side_effect=[{'moments':[
-            {'text':'I asked about testing.','kind':'reported_action','evidence_ids':['m1']},
-            {'text':'I wanted a clearer plan.','kind':'intent','evidence_ids':['m2']}]},
+            slots(),slots(kind='intent',ids=['m2'],action='review',obj='open_changes')]},
             {'reviews':[{'candidate':'c1','privacy_safe':False,'grounded':True},
                         {'candidate':'c2','privacy_safe':True,'grounded':True}]}])
         result=self.run_service(publish=True,gh_path='/synthetic/gh')
         self.assertEqual(result['delivered'],1);self.assertEqual(result['withheld'],1)
         moments=self.publisher.publish.call_args.args[0]['moments']
-        self.assertEqual([m['text'] for m in moments],['I wanted a clearer plan.'])
+        self.assertEqual([m['text'] for m in moments],['I wanted to review open changes.'])
     def test_signal_unwinds_model_and_restores_handlers_and_frozen_retry(self):
         previous=signal.getsignal(signal.SIGTERM)
         self.client.chat=Mock(side_effect=lambda *args:service._termination(signal.SIGTERM,None))
@@ -119,7 +118,7 @@ class WorkNarrativeServiceTests(unittest.TestCase):
         self.publisher.publish.side_effect=lambda *_:service._termination(signal.SIGTERM,None)
         result=self.run_service(publish=True,gh_path='/synthetic/gh')
         self.assertEqual(result['state'],'stopped')
-        ledger=json.loads((self.data/'work-narrative'/'state.json').read_text())
+        ledger=json.loads((self.data/'work-narrative'/service.STATE_NAME).read_text())
         self.assertEqual(ledger['outbox'][0]['state'],'pending')
     def test_stop_guard_rechecks_before_each_transport_write(self):
         stop=self.data/'work-narrative-STOP';transport=Mock()
@@ -138,8 +137,7 @@ class WorkNarrativeServiceTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue())['error_code'],'work_requires_macos')
         config.assert_not_called();execute.assert_not_called();verify.assert_not_called()
     def test_malformed_model_output_reports_fixed_stage_reason_only(self):
-        self.client.chat=Mock(return_value={'moments':[{'text':'PRIVATE_SECRET','kind':'discussion',
-                                                       'evidence_ids':['hallucinated-id']}]})
+        self.client.chat=Mock(return_value={'moments':[slots(kind='discussion',ids=['hallucinated-id'])]})
         result=self.run_service()
         self.assertEqual(result['state'],'error')
         self.assertEqual(result['error_code'],'local_model_extraction_unknown_support')
@@ -159,23 +157,23 @@ class WorkNarrativeServiceTests(unittest.TestCase):
         self.assertEqual(len(self.client.calls),4)
         self.assertEqual([len(self.client.calls[n][1]['messages']) for n in (0,2)],[5,5])
     def test_default_days_process_current_then_one_previous_batch_without_backfill_starvation(self):
-        today=copy.deepcopy(self.export);today['evidence'][0]['text']='CURRENT I asked about testing.'
+        today=copy.deepcopy(self.export);today['evidence'][0]['text']='I clarified testing responsibilities. CURRENT'
         previous=copy.deepcopy(self.export);previous['day']='2026-10-26'
         since,until=day_window(previous['day'])
         previous['window']={'since':since.isoformat(),'until':until.isoformat()}
         base=previous['evidence'][0]
         previous['evidence']=[dict(base,id=f'{n:064x}',revision=f'{n+100:064x}',
             time='2026-10-26T14:00:00Z',observedAt='2026-10-26T14:01:00Z',
-            text='PREVIOUS I asked about testing.') for n in range(1,17)]
+            text='I clarified testing responsibilities. PREVIOUS') for n in range(1,17)]
         values={'2026-10-27':today,'2026-10-26':previous}
         result=service.execute(self.settings,model='model:local',ollama_path='/synthetic/ollama',
             client_factory=self.factory,publisher_factory=self.publisher_factory,
             exporter=lambda _db,selected,**_opts:copy.deepcopy(values[selected]),
             now=datetime(2026,10,27,17,tzinfo=timezone.utc))
         self.assertEqual(result['processed'],6);self.assertEqual(result['batches'],2)
-        self.assertTrue(self.client.calls[0][1]['messages'][0]['text'].startswith('CURRENT'))
-        self.assertTrue(self.client.calls[2][1]['messages'][0]['text'].startswith('PREVIOUS'))
-        ledger=json.loads((self.data/'work-narrative'/'state.json').read_text())
+        self.assertIn('CURRENT',self.client.calls[0][1]['messages'][0]['text'])
+        self.assertIn('PREVIOUS',self.client.calls[2][1]['messages'][0]['text'])
+        ledger=json.loads((self.data/'work-narrative'/service.STATE_NAME).read_text())
         self.assertEqual([item['day'] for item in ledger['outbox']],['2026-10-27','2026-10-26'])
     def test_config_canonical_binding_and_missing_publish_gh_fail_closed(self):
         changed=dict(self.settings,db=str(self.data/'other.sqlite3'))
@@ -188,15 +186,58 @@ class WorkNarrativeServiceTests(unittest.TestCase):
         remote={'content':json.dumps(payload).encode(),'sha':'d'*40}
         self.publisher.publisher._read.return_value=remote
         (self.data/'work-narrative-STOP').touch()
-        before=(self.data/'work-narrative'/'state.json').read_bytes()
+        before=(self.data/'work-narrative'/service.STATE_NAME).read_bytes()
         status_before=(self.data/'work-narrative'/'status.json').read_bytes()
         proof=service.verify_published(self.settings,model='model:local',ollama_path='/synthetic/ollama',
             gh_path=str(self.data/'gh'),publisher_factory=self.publisher_factory)
         self.assertEqual(proof,{'state':'verified','day':'2026-10-27','moments':1,'blob_sha':'d'*40})
-        self.assertEqual(before,(self.data/'work-narrative'/'state.json').read_bytes())
+        self.assertEqual(before,(self.data/'work-narrative'/service.STATE_NAME).read_bytes())
         self.assertEqual(status_before,(self.data/'work-narrative'/'status.json').read_bytes())
         self.assertEqual(len(self.client.calls),2)
         changed=copy.deepcopy(payload);changed['moments'][0]['text']='I completed testing.'
         self.publisher.publisher._read.return_value={'content':json.dumps(changed).encode(),'sha':'e'*40}
         with self.assertRaises(ValueError):service.verify_published(self.settings,model='model:local',
             ollama_path='/synthetic/ollama',gh_path=str(self.data/'gh'),publisher_factory=self.publisher_factory)
+    def legacy(self):
+        runtime=self.data/'work-narrative';runtime.mkdir(exist_ok=True)
+        payload={'version':1,'day':'2026-10-27','timezone':'America/Chicago','cutoff':'03:00',
+                 'source':'work','processing':'on-device','coverage':'partial','moments':[{
+                     'id':'9'*64,'time':'2026-10-27T14:00:00Z','kind':'reported_action',
+                     'text':'I reviewed PRIVATE_USERNAME and PRIVATE_PROJECT.','sanitized':True}]}
+        digest=service._digest(payload)
+        old={'version':1,'model':'model:local','ollama':'/synthetic/ollama',
+             'evidence':{'a'*64:{'day':'2026-10-27','revision':'b'*64,'state':'processed'}},
+             'outbox':[{'id':digest,'digest':digest,'day':'2026-10-27','state':'pending',
+                        'payload':payload,'evidence':['a'*64]}]}
+        path=runtime/'state.json';path.write_text(json.dumps(old))
+        return path,path.read_bytes()
+    def test_legacy_requires_stopped_scoped_quarantine_preserves_old_bytes_and_source_indexes(self):
+        path,before=self.legacy()
+        result=self.run_service(publish=True,gh_path='/synthetic/gh')
+        self.assertEqual(result['error_code'],'legacy_quarantine_required')
+        self.factory.assert_not_called();self.publisher_factory.assert_not_called()
+        with self.assertRaises(ValueError):service.quarantine_legacy(self.settings,model='model:local',ollama_path='/synthetic/ollama')
+        (self.data/'work-narrative-STOP').touch()
+        result=service.quarantine_legacy(self.settings,model='model:local',ollama_path='/synthetic/ollama')
+        self.assertEqual(result['state'],'quarantined');self.assertEqual(result['legacy_evidence'],1)
+        self.assertEqual(result['legacy_pending'],1);self.assertEqual(result['legacy_delivered'],0)
+        self.assertEqual(path.read_bytes(),before)
+        fresh=json.loads(path.with_name(service.STATE_NAME).read_text())
+        self.assertEqual(fresh['evidence'],{});self.assertEqual(fresh['outbox'],[])
+        self.assertNotIn('PRIVATE_USERNAME',json.dumps(result))
+        (self.data/'work-narrative-STOP').unlink()
+        result=self.run_service(publish=True,gh_path='/synthetic/gh')
+        self.assertEqual(result['delivered'],1);self.assertEqual(path.read_bytes(),before)
+        self.assertNotIn('PRIVATE_USERNAME',json.dumps(self.publisher.publish.call_args.args[0]))
+        policy_before=path.with_name(service.STATE_NAME).read_bytes()
+        (self.data/'work-narrative-STOP').touch()
+        repeated=service.quarantine_legacy(self.settings,model='model:local',ollama_path='/synthetic/ollama')
+        self.assertEqual(repeated['state'],'quarantined');self.assertEqual(repeated['legacy_evidence'],1)
+        self.assertEqual(path.with_name(service.STATE_NAME).read_bytes(),policy_before)
+    def test_legacy_quarantine_refuses_owner_mismatch_or_running_worker(self):
+        path,before=self.legacy();(self.data/'work-narrative-STOP').touch()
+        with self.assertRaises(ValueError):service.quarantine_legacy(self.settings,model='other:local',ollama_path='/synthetic/ollama')
+        with worker_lock(path.parent/'.worker'):
+            result=service.quarantine_legacy(self.settings,model='model:local',ollama_path='/synthetic/ollama')
+            self.assertEqual(result['state'],'busy')
+        self.assertEqual(path.read_bytes(),before);self.assertFalse(path.with_name(service.STATE_NAME).exists())

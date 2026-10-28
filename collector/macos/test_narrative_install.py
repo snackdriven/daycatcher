@@ -34,6 +34,14 @@ class InstallerTests(unittest.TestCase):
         for name in ('collector.sqlite3','work-summary.sqlite3','summary.json','summary-STOP'):
             path=self.p['data']/name;path.write_bytes(b'preserve exactly');self.originals[path]=path.read_bytes()
     def prepare(self):return installer.prepare(self.p,ollama=str(self.ollama),model='local-model',gh=str(self.gh),source=self.source)
+    def legacy(self):
+        self.prepare();value=json.loads(self.p['settings'].read_text(encoding='utf-8'))
+        value['version']=1;value.pop('policy',None)
+        value['files'].pop('journal_collector/work_language.py')
+        (self.p['code']/'journal_collector'/'work_language.py').unlink()
+        self.p['settings'].write_text(json.dumps(value),encoding='utf-8')
+        self.p['plist'].write_bytes(plistlib.dumps(installer.plist_value(self.p,value)))
+        return value
     def test_prepare_disabled_no_jobs_and_originals_unchanged(self):
         with patch.object(installer,'launchctl') as command:
             result=self.prepare()
@@ -181,3 +189,38 @@ class InstallerTests(unittest.TestCase):
             with self.subTest(selected=selected),patch.dict(installer.os.environ,{'OLLAMA_MODELS':selected}):
                 with self.assertRaises(ValueError):self.prepare()
         self.assertFalse(self.p['settings'].exists());self.assertFalse(self.p['code'].exists())
+    def test_disabled_hash_owned_legacy_bundle_upgrades_to_complete_controlled_policy(self):
+        self.legacy()
+        with patch.object(installer,'worker_locked',return_value=False),patch.object(installer,'launchctl') as command:
+            self.assertTrue(self.prepare()['prepared'])
+        command.assert_not_called()
+        value=installer.settings(self.p)
+        self.assertEqual(value['version'],2);self.assertEqual(value['policy'],'controlled-work-v1')
+        self.assertIn('journal_collector/work_language.py',value['files'])
+        self.assertTrue(plistlib.loads(self.p['plist'].read_bytes())['Disabled'])
+        self.assertTrue(self.p['stop'].exists())
+    def test_legacy_bundle_cannot_start_or_claim_live_handoff_proof(self):
+        value=self.legacy()
+        with patch.object(installer,'raw_health') as raw,patch.object(installer,'verify_handoff') as proof,patch.object(installer,'launchctl') as command:
+            with self.assertRaises(ValueError):installer.start(self.p,'gui/501')
+        raw.assert_not_called();proof.assert_not_called();command.assert_not_called()
+        with patch.object(installer.subprocess,'run') as run:
+            with self.assertRaises(ValueError):installer.verify_handoff(self.p,value)
+        run.assert_not_called()
+    def test_legacy_upgrade_refuses_changed_files_enabled_job_and_active_worker(self):
+        self.legacy();original=self.p['settings'].read_bytes()
+        worker=self.p['code']/'work_narrative_service.py';body=worker.read_bytes();worker.write_bytes(b'tampered')
+        with self.assertRaises(ValueError):self.prepare()
+        self.assertEqual(self.p['settings'].read_bytes(),original);worker.write_bytes(body)
+        value=installer.settings(self.p,allow_legacy=True)
+        self.p['plist'].write_bytes(plistlib.dumps(installer.plist_value(self.p,value,enabled=True)))
+        with self.assertRaises(ValueError):self.prepare()
+        self.p['plist'].write_bytes(plistlib.dumps(installer.plist_value(self.p,value)))
+        with patch.object(installer,'worker_locked',return_value=True):
+            with self.assertRaises(ValueError):self.prepare()
+        self.assertEqual(self.p['settings'].read_bytes(),original)
+    def test_current_policy_never_uses_legacy_completeness_exemption(self):
+        self.prepare();value=json.loads(self.p['settings'].read_text(encoding='utf-8'))
+        value['files'].pop('journal_collector/work_language.py')
+        self.p['settings'].write_text(json.dumps(value),encoding='utf-8')
+        with self.assertRaises(ValueError):installer.settings(self.p,allow_legacy=True)

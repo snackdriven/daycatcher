@@ -22,8 +22,10 @@ _base=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(_base)
 launchctl=_base.launchctl
 LABEL='com.snackdriven.daycatcher-work-moments'
 RAW_LABEL='com.snackdriven.conversation-collector'
-REQUIRED_PACKAGE=('__init__.py','__main__.py','local_work_model.py','work_moments.py',
+REQUIRED_PACKAGE=('__init__.py','__main__.py','local_work_model.py','work_moments.py','work_language.py',
                   'narrative_evidence.py','summary_publish.py','cli.py','runtime.py')
+LEGACY_REQUIRED_PACKAGE=tuple(name for name in REQUIRED_PACKAGE if name!='work_language.py')
+POLICY='controlled-work-v1'
 STANDALONE=('export_narrative_evidence.py','work_narrative_service.py')
 
 
@@ -113,19 +115,25 @@ def plist_value(p,settings,*,enabled=False):
         'StandardErrorPath':str(p['data']/'work-narrative.launchd.stderr.log')}
 
 
-def settings(p,*,check_code=True):
+def settings(p,*,check_code=True,allow_legacy=False):
     value=_json(p['settings'])
-    if (type(value) is not dict or set(value)!={'version','python','ollama','gh','model','models_dir','staged_at','files'}
-            or type(value['version']) is not int or value['version']!=1
+    base_keys={'version','python','ollama','gh','model','models_dir','staged_at','files'}
+    if type(value) is not dict:raise ValueError('settings_binding')
+    legacy=(allow_legacy and type(value.get('version')) is int and value['version']==1)
+    if (set(value)!=(base_keys if legacy else base_keys|{'policy'})
+            or type(value.get('version')) is not int or value['version']!=(1 if legacy else 2)
+            or (not legacy and value.get('policy')!=POLICY)
             or not isinstance(value['model'],str) or not re.fullmatch(r'[A-Za-z0-9_.:/-]{1,180}',value['model'])
             or not isinstance(value['files'],dict)):
         raise ValueError('settings_binding')
+    if legacy and 'journal_collector/work_language.py' in value['files']:raise ValueError('settings_binding')
     for key in ('python','ollama','gh'):
         if not isinstance(value[key],str) or not Path(value[key]).is_absolute():raise ValueError('settings_binding')
         if check_code:executable(value[key])
     if model_root(value['models_dir'])!=value['models_dir']:raise ValueError('model_root_binding')
     datetime.fromisoformat(value['staged_at'])
-    required={'journal_collector/'+name for name in REQUIRED_PACKAGE}|set(STANDALONE)|{'macos/install.py','macos/narrative_install.py'}
+    package=LEGACY_REQUIRED_PACKAGE if legacy else REQUIRED_PACKAGE
+    required={'journal_collector/'+name for name in package}|set(STANDALONE)|{'macos/install.py','macos/narrative_install.py'}
     if not required.issubset(value['files']):raise ValueError('code_binding')
     for relative,digest in value['files'].items():
         if (not isinstance(relative,str) or Path(relative).is_absolute() or '..' in Path(relative).parts
@@ -137,8 +145,8 @@ def settings(p,*,check_code=True):
     return value
 
 
-def owned(p,*,check_code=True):
-    value=settings(p,check_code=check_code)
+def owned(p,*,check_code=True,allow_legacy=False):
+    value=settings(p,check_code=check_code,allow_legacy=allow_legacy)
     actual=plistlib.loads(regular(p['plist']).read_bytes())
     if type(actual.get('Disabled')) is not bool or actual!=plist_value(p,value,enabled=not actual['Disabled']):
         raise ValueError('owned_plist_binding')
@@ -167,8 +175,9 @@ def prepare(p,*,ollama,model,python=None,gh=None,source=None):
     for original in originals:
         if not regular(original).is_file():raise ValueError('complete_bundle_required')
     if p['plist'].exists():
-        _,previous=owned(p)
+        _,previous=owned(p,allow_legacy=True)
         if not previous['Disabled']:raise ValueError('stop_before_reinstall')
+        if worker_locked(p):raise ValueError('producer_worker_still_active')
     for directory in (p['code'],p['code']/'journal_collector',p['code']/'macos'):
         safe(directory);directory.mkdir(parents=True,exist_ok=True);os.chmod(directory,0o700)
     files={}
@@ -177,7 +186,7 @@ def prepare(p,*,ollama,model,python=None,gh=None,source=None):
         body=original.read_bytes()
         _write(p['code']/relative,body)
         files[relative.as_posix()]=hashlib.sha256(body).hexdigest()
-    value={'version':1,'python':python,'ollama':ollama,'gh':gh,'model':model,'models_dir':models_dir,
+    value={'version':2,'policy':POLICY,'python':python,'ollama':ollama,'gh':gh,'model':model,'models_dir':models_dir,
            'staged_at':datetime.now(timezone.utc).isoformat(),'files':files}
     _write(p['settings'],json.dumps(value,sort_keys=True,indent=2)+'\n')
     _write(p['stop'],'Producer disabled until deliberate start\n')
@@ -220,6 +229,7 @@ def raw_health(p,domain):
 
 
 def verify_handoff(p,value):
+    if value.get('version')!=2 or value.get('policy')!=POLICY:raise ValueError('controlled_policy_required')
     status=regular(p['status'])
     if not status.is_file() or status.stat().st_mtime<datetime.fromisoformat(value['staged_at']).timestamp():
         raise ValueError('fresh_real_handoff_required')
@@ -260,7 +270,7 @@ def start(p,domain):
 
 def stop(p,domain):
     # Validate exact job ownership before touching launchctl or the definition.
-    value,_=owned(p,check_code=False)
+    value,_=owned(p,check_code=False,allow_legacy=True)
     _write(p['stop'],'Producer stop requested\n')
     _write(p['plist'],plistlib.dumps(plist_value(p,value)))
     launchctl('disable',domain+'/'+LABEL)

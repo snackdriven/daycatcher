@@ -14,7 +14,7 @@ Personal Windows and a work Mac collect context for the same private journal. Co
 
 - **Codex and Claude Code:** hidden Python readers collect native local logs. The visible desktop apps can be closed.
 - **Regular Claude chats:** a hidden Electron bridge uses its own signed-in account session, independently of the visible Claude app. Bounded account reads and internal endpoint changes limit what it can catch.
-- **Work Mac:** local Codex and Claude Code collection is running. Raw work transcripts stay on the Mac. The original topic-only feed is too thin for narrative writing; a separately validated, on-device sanitized-moment handoff is included, with live setup still pending.
+- **Work Mac:** local Codex and Claude Code collection is running. Raw work transcripts stay on the Mac. Work publishing is paused while the controlled-language handoff is installed and checked.
 - **ChatGPT:** an hourly Codex app automation reads supported user messages. Each pass lists at most 50 recent mixed chats, selects up to five ChatGPT chats and reads at most ten turns each. Assistant bodies aren't available through this path. Codex and its connected ChatGPT reader need to be available; a separate ChatGPT window isn't needed.
 - **Dot:** its source-side producer sends fixed topic fragments through private `imports/dot/v1/YYYY-MM-DD.json` files. Its first real file and journal support were verified. Dot reports its hourly schedule saved and tested; the cloud scheduler hasn't been independently inspected.
 - **Muse:** planned, still unconnected. Source access, authentication and reliable original timestamps need verification.
@@ -28,7 +28,7 @@ That's the verified setup as of October 27, 2026. Coverage is partial, including
 
 Source timestamps determine the journal day, with **03:00 as the cutoff in America/Chicago**. The conversation at 01:00 still belongs to the day you haven't gone to bed from. The calendar can cope.
 
-The [narrative writer](collector/docs/narrative-writer.md) keeps specific, supported moments and turns them into a few natural paragraphs. The first personal entry has been written and checked against its human sources. Automatic native Codex writing is configured; its first scheduled execution is a separate check. Useful work moments still need the Mac handoff connected.
+The [narrative writer](collector/docs/narrative-writer.md) keeps specific, supported moments and turns them into a few natural paragraphs. Personal writing has completed an hourly run, with source review and duplicate-free readback. Useful work moments still need the controlled Mac handoff connected.
 
 Wanting to make a podcast does not become listening to one. Asking for a fix does not become finishing it. Assistant suggestions and pasted examples do not become things you supposedly did.
 
@@ -42,7 +42,7 @@ The Windows collector starts after current-user sign-in. Its windowless journal 
 
 Collection makes no model calls. Narrative writing uses a separately configured native Codex agent and the existing account, without a new model API key; source logins and GitHub authentication still are. Expired sign-in needs attention; workers don't take over the desktop to log in.
 
-Raw work chats remain on the Mac. Personal evidence is stored privately and supplied to the configured writer for processing; that is not on-device inference. Only grounded journal prose and approved sanitized work moments are published to the private journal. Raw transcripts aren't committed here or uploaded to that repository. Coverage diagnostics live in status files.
+Raw work chats remain on the Mac. Work descriptions are rendered from vetted action, purpose and reaction slots. Both producer and receiver reject arbitrary model wording; grounding still needs on-device review. Personal evidence is stored privately and supplied to the configured writer for processing. Raw transcripts aren't committed here or uploaded to the private journal. Coverage diagnostics live in status files.
 
 Separate work and personal receipts prevent duplicate paragraphs. Changes to imported evidence are flagged for review instead of quietly rewriting existing journal text. Collection and publication have separate stop controls.
 
