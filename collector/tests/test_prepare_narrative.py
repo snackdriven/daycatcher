@@ -15,9 +15,9 @@ from prepare_narrative import prepare, main
 
 
 class FakeGH:
-    def __init__(self):self.files={};self.private=True;self.writes=0
+    def __init__(self):self.files={};self.private=True;self.writes=0;self.reads=[]
     def repo(self):return {'full_name':'snackdriven/day-crumbs','private':self.private,'default_branch':'main','permissions':{'push':True}}
-    def read(self,path):return self.files.get(path)
+    def read(self,path):self.reads.append(path);return self.files.get(path)
     def write(self,path,content,sha):
         self.writes+=1
         self.files[path]={'content':content,'sha':hashlib.sha1(content).hexdigest()}
@@ -89,6 +89,48 @@ class PrepareTests(unittest.TestCase):
         (self.data/'narrative-STOP').unlink()
         other=self.data/'copy.json';other.write_bytes(self.config.read_bytes())
         with self.assertRaises(Exception):prepare(other,'2026-10-27',transport=self.gh)
+
+    def test_work_stop_skips_fetch_and_replaces_active_bad_work_input_with_personal_only(self):
+        path='imports/work-moments/v1/2026-10-27.json'
+        self.gh.files[path]={'content':b'{}','sha':'c'*40}
+        work={'id':'work_1','day':'2026-10-27','source':'work','sanitized':True,
+              'text':'Synthetic private label should stay out.','time':'2026-10-27T15:00:00Z','kind':'attempt'}
+        first=self.run_prepare(work_validator=lambda *a,**kw:{'version':1,'day':'2026-10-27','evidence':[work]})
+        self.assertEqual(1,len(self.bundle(first)['work_evidence']))
+        (self.data/'work-handoff-STOP').touch();self.gh.reads.clear()
+        result=self.run_prepare(work_validator=lambda *a,**kw:self.fail('paused validator must not run'))
+        self.assertEqual('prepared',result['state']);self.assertEqual('paused',result['work_state'])
+        self.assertNotIn(path,self.gh.reads)
+        self.assertEqual([],self.bundle(result)['work_evidence'])
+        self.assertEqual(1,result['personal_count'])
+        self.assertNotIn('Synthetic private label',Path(result['input']).read_text())
+        self.assertNotIn('Synthetic private label',Path(result['manifest']).read_text())
+        self.assertEqual(0,self.gh.writes)
+
+    def test_work_stop_preserves_verified_old_work_only_and_never_replays_pending_work(self):
+        path='imports/work-moments/v1/2026-10-27.json'
+        self.gh.files[path]={'content':b'{}','sha':'c'*40}
+        work={'id':'work_1','day':'2026-10-27','source':'work','sanitized':True,'text':'I tried a workflow fix.',
+              'time':'2026-10-27T15:00:00Z','kind':'attempt'}
+        first=self.run_prepare(work_validator=lambda *a,**kw:{'version':1,'day':'2026-10-27','evidence':[work]})
+        manifest=json.loads(Path(first['manifest']).read_text())
+        entry={'version':1,'day':'2026-10-27','paragraphs':[{'text':'I tried a workflow fix.','evidence_ids':['work_1']}]}
+        receipts=self.data/'narrative-writer'/'receipts.sqlite3'
+        NarrativePublisher('gh',receipts,transport=self.gh).publish(entry,manifest)
+        (self.data/'work-handoff-STOP').touch();self.gh.reads.clear()
+        before=receipts.read_bytes()
+        result=self.run_prepare()
+        self.assertEqual('prepared',result['state']);self.assertEqual('paused',result['work_state'])
+        self.assertEqual([],self.bundle(result)['work_evidence'])
+        self.assertEqual(entry['paragraphs'],self.bundle(result)['old_owned_paragraphs'])
+        self.assertEqual(before,receipts.read_bytes());self.assertNotIn(path,self.gh.reads)
+        with contextlib.closing(sqlite3.connect(receipts)) as db,db:
+            db.execute("UPDATE narrative_receipts SET state='pending',last_error='attempting'")
+        pending_before=receipts.read_bytes();writes_before=self.gh.writes
+        pending=self.run_prepare()
+        self.assertEqual('review_required',pending['state']);self.assertEqual('paused',pending['work_state'])
+        self.assertNotIn('entry',pending);self.assertEqual(pending_before,receipts.read_bytes())
+        self.assertEqual(writes_before,self.gh.writes)
 
     def deliver(self):
         first=self.run_prepare()
@@ -202,6 +244,8 @@ class PrepareTests(unittest.TestCase):
 
     def test_pending_cli_exit_two_exposes_only_private_replay_paths(self):
         _,receipts=self.deliver()
+        # Pausing work must not block reconciliation of a personal-only receipt.
+        (self.data/'work-handoff-STOP').touch()
         with contextlib.closing(sqlite3.connect(receipts)) as db,db:
             db.execute("UPDATE narrative_receipts SET state='pending',last_error='attempting'")
         output=io.StringIO()

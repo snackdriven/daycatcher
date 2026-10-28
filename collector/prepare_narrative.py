@@ -328,6 +328,8 @@ def prepare(config_path,day,*,transport=None,work_validator=None,max_items=200,m
     if type(max_bytes) is not int or not 1<=max_bytes<=204800:raise ValueError('bounds')
     config=load_config(Path(config_path),'personal')
     data=Path(config['data_dir']).resolve()
+    work_stop=data/'work-handoff-STOP'
+    work_paused=work_stop.exists() or work_stop.is_symlink()
     exclusions=config.get('narrative_excluded_conversations',[])
     if not isinstance(exclusions,list):raise ValueError('exclusions')
     publisher=Publisher(config['gh_path'],transport=transport)
@@ -339,11 +341,14 @@ def prepare(config_path,day,*,transport=None,work_validator=None,max_items=200,m
     except Exception:
         return {'state':'review_required','day':day,'error_code':'prior_receipt_or_support_invalid'}
     if baseline[0] is not None and baseline[0]['state']=='pending':
+        if work_paused and any(item.get('source')=='work' for item in baseline[2]['evidence']):
+            return {'state':'review_required','day':day,'work_state':'paused',
+                    'error_code':'work_handoff_paused_pending'}
         return _pending_replay(data,day,baseline)
     exported=_personal_pages(config,day,max_items=max_items,max_bytes=max_bytes,
         offset=offset,expected_snapshot=expected_snapshot)
-    handoff=publisher._read(f'imports/work-moments/v1/{day}.json')
-    work=[];work_state='missing'
+    handoff=None if work_paused else publisher._read(f'imports/work-moments/v1/{day}.json')
+    work=[];work_state='paused' if work_paused else 'missing'
     if handoff is not None:
         if len(handoff['content'])>1024*1024:raise ValueError('work_handoff_size')
         if work_validator is None:
@@ -374,7 +379,7 @@ def prepare(config_path,day,*,transport=None,work_validator=None,max_items=200,m
         return accepted
     try:
         old,prior=_old_paragraphs(baseline,content,manifest,
-            bounded=exported['coverage']['omitted']>0,work_missing=work_state=='missing',
+            bounded=exported['coverage']['omitted']>0,work_missing=work_state in {'missing','paused'},
             review_checker=reviewed)
     except LookupError:
         return {**metadata,'state':'need_pagination','error_code':'prior_support_outside_export'}
