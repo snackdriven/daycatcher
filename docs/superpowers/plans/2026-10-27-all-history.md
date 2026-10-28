@@ -34,11 +34,11 @@
 
 **Interfaces:** `Store.ingest_batch(batch, *, preserve_existing_complete=False)`; `collect_local(..., cursor_namespace=None, preserve_existing_complete=False)`; `history_collect.py --config ABS --once|--watch`.
 
-- [ ] Write failing tests for separate live/history cursor keys, atomic preservation of every field/revision/job of complete canonical rows, conflict counts, exclusions and checkpoint retries.
-- [ ] Run focused tests and confirm new assertions fail.
-- [ ] Implement optional trusted historical policy inside `BEGIN IMMEDIATE`; keep ordinary behavior unchanged. History cursor names must not enter message provenance's canonical file identity.
-- [ ] Implement a private durable file queue with bounded small-file batches, independent lock/STOP, no live configuration mutation, metadata-only status and resumable discovery/EOF outcomes.
-- [ ] Run focused tests, review diff and commit after task review.
+- [x] Write failing tests for separate live/history cursor keys, atomic preservation of every field/revision/job of complete canonical rows, conflict counts, exclusions and checkpoint retries.
+- [x] Run focused tests and confirm new assertions fail.
+- [x] Implement optional trusted historical policy inside `BEGIN IMMEDIATE`; keep ordinary behavior unchanged. History cursor names must not enter message provenance's canonical file identity.
+- [x] Implement a private durable file queue with bounded small-file batches, independent lock/STOP, no live configuration mutation, metadata-only status and resumable discovery/EOF outcomes.
+- [x] Run focused tests, review diff and commit after task review.
 
 ### Task 2: Historical account frontiers
 
@@ -46,10 +46,10 @@
 
 **Interfaces:** native helper accepts exact schema4 active metadata, archived metadata and exact schema1 pages into a separate history frontier; emits at most five bounded reads per plan and acks actual import results only. Claude inventory accepts a bounded start offset and returns next offset/end proof; no 90-row pretend completion.
 
-- [ ] Test old chats outside recent planner horizons, pagination resume, unsupported/truncated records, stale imports, exact source binding, end proof and untouched live planner checkpoints.
-- [ ] Implement strict native historical import through the transaction-preserving Store lane and a separate frontier, not the recent planner.
-- [ ] Add bounded Claude metadata pagination and historical ingestion mode. Keep account/profile locks and source binding; never copy profiles or extract cookies.
-- [ ] Verify synthetic account tests; run one controlled native page and one hidden Claude inventory only after reviewed source integration.
+- [x] Test old chats outside recent planner horizons, pagination resume, unsupported/truncated records, stale imports, exact source binding, end proof and untouched live planner checkpoints.
+- [x] Implement strict native historical import through the transaction-preserving Store lane and a separate frontier, not the recent planner.
+- [x] Add bounded Claude metadata pagination and historical ingestion mode. Keep account/profile locks and source binding; never copy profiles or extract cookies.
+- [x] Verify synthetic account tests; run one controlled native page and one hidden Claude inventory only after reviewed source integration.
 
 ### Task 3: Work historical coordinator
 
@@ -57,10 +57,10 @@
 
 **Interfaces:** canonical Mac `collector.json`, existing model/Ollama/gh settings, Task 1 historical importer, unchanged controlled ledger. Independent history queue stores only private day/status state; shared model lock gives live work priority. Publisher uses the existing controlled wire and immutable outbox.
 
-- [ ] Test current-day priority, independent STOP, stopped/reboot resume, complete-day detection, paged large days, oversized records and 32-moment capacity outcomes.
-- [ ] Implement bounded source-local discovery/scan/model coordinator, with no raw outbound diagnostics and no reset of controlled/legacy ledgers.
-- [ ] Add owned disabled-first launchd staging, exact argv/hash validation, current-user startup and a single pinned setup command with metadata-only inventory/readback.
-- [ ] Test preserving raw collector and all prior code/data controls; require real controlled handoff proof before live start.
+- [x] Test current-day priority, independent STOP, stopped/reboot resume, complete-day detection, paged large days, oversized records and 32-moment capacity outcomes.
+- [x] Implement bounded source-local discovery/scan/model coordinator, with no raw outbound diagnostics and no reset of controlled/legacy ledgers.
+- [x] Add owned disabled-first launchd staging, exact argv/hash validation, current-user startup and a single pinned setup command with metadata-only inventory/readback.
+- [x] Test preserving raw collector and all prior code/data controls; require real controlled handoff proof before live start.
 
 ### Task 4: Historical journal queue and real acceptance
 
@@ -68,11 +68,11 @@
 
 **Interfaces:** canonical personal config; eligible source day/fingerprint discovery; up to two historical days per native writer pass in addition to current/previous days; explicit prepared/reviewed/published/unchanged/gap ack outcomes.
 
-- [ ] Test older dates, late new evidence reopening, unchanged fingerprints, excluded/undated evidence, manual edits/deletion and no premature success acknowledgment.
-- [ ] Implement fair metadata-only day planning and acks; native writer still owns factual prose review and publication.
-- [ ] Update the existing writer automation's prompt while preserving its schedule/model/notification settings; no duplicate schedule.
-- [ ] Start personal historical collection, process a real older-day batch, independently review and verify saved prose/retry/no unrelated edits.
-- [ ] Run full Python/CJS/Mac portable tests and whole-branch review. Integrate reviewed source; provide one source-local Mac command; report exact coverage/progress and remaining gaps.
+- [x] Test older dates, late new evidence reopening, unchanged fingerprints, excluded/undated evidence, manual edits/deletion and no premature success acknowledgment.
+- [x] Implement fair metadata-only day planning and acks; native writer still owns factual prose review and publication.
+- [x] Update the existing writer automation's prompt while preserving its schedule/model/notification settings; no duplicate schedule.
+- [x] Start personal historical collection, process a real older-day batch, independently review and verify saved prose/retry/no unrelated edits.
+- [x] Run full Python/CJS/Mac portable tests and whole-branch review. Integrate reviewed source; provide one source-local Mac command; report exact coverage/progress and remaining gaps.
 
 ## Ledger
 
@@ -80,3 +80,8 @@
 - Ruling: use canonical shared Store with separate historical cursor namespace, not a second source database; atomic preservation avoids stale-copy overwrite and identity/exclusion drift.
 - Ruling: all accessible history is bounded by actual adapter access and provenance. No timestamp or account-completeness inference from titles, file names or a recent list.
 - Baseline: isolated checkout on `codex/history-backfill`, 335 core tests pass. Native worktree tool cannot target this projectless task's nested checkout; native attempt returned “Not a git repository,” so standard ignored Git worktree fallback is used.
+
+- Delivery: reviewed source integrated and pushed as dae1b16810133b4c7aa54af9872132f1eecfd5ea. Core 385, portable Mac 62, CJS 27, setup wrapper 5 tests pass; final source STOP regression passes.
+- Real acceptance: historical local inventory traversed 123 files (117 EOF, 6 explicit gaps); hidden Claude inventory exposed 90 chats, 87 non-probe bodies processed in bounded batches with live workers restored. Native ChatGPT historical frontier discovered 54 exposed chats, imported five pages, and retains partial active coverage.
+- Journal acceptance: October 24 and 25 gained two independently reviewed paragraphs each; exact publication/readback/retry succeeded, original prose preserved. October 25's two untouched legacy topic spans archived and removed. Two day receipts acknowledged; 89 dates remain pending, with two historical dates configured per existing hourly native writer pass.
+- Work handoff: pinned one-command historical setup saved and exact-byte verified in the existing Gmail draft. Actual Mac execution and older work delivery remain pending user Terminal action; no claim of live historical Mac installation.
