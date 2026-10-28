@@ -47,3 +47,47 @@ Reviews are additive private files. Source data, historical support and publicat
 Use one native writer automation. It checks hourly for the CURRENT 03:00 to 03:00 journal day and the preceding day, allowing a sleeping/offline PC to catch up when the app becomes available. Writing uses the native model, not a new API key or a desktop chat window. Local runtime/app access is still required. The original Rook cloud writer may remain active; its current task prompt cannot be inspected here. Therefore this publisher owns only `journal-narrative` spans, preserves all Rook/manual prose, and avoids repeating moments already expressed outside its span. Do not claim that the cloud task was disabled or that a local automation runs while the PC is off.
 
 The raw collector and narrative writer have separate controls. `fixed_publishing_enabled:false` retires only the old enum-to-entry sink; personal Dot pulling can continue. It neither stops raw collection nor proves a new prose writer ran. Work's fixed sink must also be retired when the Mac narrative handoff is verified.
+
+## All available historical days
+
+Continue current/previous-day work first. Then run one bounded history planning pass with the canonical personal configuration and pinned timezone data:
+
+```sh
+python narrative_history_plan.py --config /absolute/private/runtime/personal-summary.json --plan
+```
+
+The helper reads the canonical source SQLite database in read-only transactions, applies the same verified-human evidence policy, message exclusions and configured conversation/association exclusions, and assigns dates from original instants using the 03:00 America/Chicago boundary. It scans at most 16 MiB per invocation and resumes larger inventories privately. Each inventory freezes a source-row high-water mark and advances a durable key frontier; concurrent live inserts wait for the next inventory and cannot repeatedly reset historical progress. Existing rows and exclusions are checked in each bounded transaction. `source_changed_during_scan:true` explicitly identifies a metadata inventory observed across source changes. This queue contains provisional day fingerprints, never prose evidence: preparation must independently reread current eligible evidence and publication must retain all current provenance/exclusion/readback checks. A subsequent inventory reopens changed days. Explicit exclusion-scope or accepted work-inventory changes restart discovery. `scan_complete:false` means run another bounded pass; no days are released until the frozen inventory reaches EOF. Oversize records are explicit omissions. Scan EOF proves only the discovered local source inventory, never all account coverage.
+
+The private queue is `<runtime>/narrative-history/queue.json`; its lock is independent of live collection. `<runtime>/narrative-STOP`, `<runtime>/history/STOP`, and `<runtime>/narrative-history/STOP` each prevent progress. Do not clear these controls, source checkpoints, exclusions or delivery receipts. Plans return at most two older days, excluding the current and preceding journal day. Days rotate after explicit acknowledgments. Changed evidence reopens settled days; manual-edit/deletion gaps remain blocked for deliberate review. Excluded or removed evidence can reopen an old day with zero remaining eligible messages; that is a review/removal signal, never permission to recreate old material.
+
+An optional controlled work-day inventory can add work-only dates without copying work evidence:
+
+```sh
+python narrative_history_plan.py --config /absolute/private/runtime/personal-summary.json --plan --work-days /absolute/private/runtime/validated-work-days.json
+```
+
+Its exact shape is `{"version":1,"days":[{"day":"2020-01-01","fingerprint":"64 lowercase hex characters"}]}`. Supply only metadata derived from validated controlled handoffs, never titles, work identifiers or raw messages. Duplicate dates, extra fields and invalid hashes/dates are rejected. A work pause blocks accepting a new work inventory. An absent optional argument preserves the last accepted inventory; an explicitly empty validated inventory removes its work-day availability. This inventory cannot establish that a handoff body is valid or available; normal preparation still verifies the actual finite-language handoff, and a missing/paused work input cannot settle a work-available day.
+
+For each planned date, preserve all existing prose and follow the normal bounded writing pass, including real clause-by-clause semantic review and exact retry reconciliation. Before creating any historical entry whose remote path is absent, check **commit metadata for that exact path** on the pinned private repository and branch:
+
+```sh
+gh api 'repos/snackdriven/day-crumbs/commits?path=entries/2020/01/2020-01-01.md&sha=main&per_page=1' --jq 'length'
+```
+
+Use the planned date in the exact `entries/YYYY/MM/YYYY-MM-DD.md` path. A nonempty result means prior path history: record a `manual_deletion`/`review_required` gap and stop that day. Do not resurrect the entry, fetch old blobs or diffs, infer deleted prose from receipts, or rewrite deletion intent. An unavailable/error response is missing proof and also blocks creation. Only a successful empty metadata result can establish no known path history. An existing path still requires normal manual-edit and owned-span checks. This guard is required even when no local narrative receipt exists.
+
+Preparation and review are explicit intermediate stages, not successful journal delivery. Save a private proof JSON and acknowledge each actual outcome:
+
+```sh
+python narrative_history_plan.py --config /absolute/private/runtime/personal-summary.json --ack /absolute/private/runtime/narrative-history/proof.json
+```
+
+Every proof includes `version:1`, `day`, the exact planned `fingerprint`, `outcome`, and `result:{"state":OUTCOME}`. Allowed outcomes are `prepared`, `reviewed`, `published`, `unchanged`, and `gap`. Keep proof files private. The queue stores their hashes and phase metadata, never their prose. A source scan is repeated before acknowledgment; a changed fingerprint refuses the stale proof. `inventory_pending` asks for another bounded scan and records no acknowledgment.
+
+For `prepared`, set `input_digest` to SHA256 of the exact bytes in `<runtime>/narrative-writer/inputs/YYYY-MM-DD.json` returned by successful preparation. For `reviewed`, retain that same digest and add `reviewed:true` after actual semantic review. A changed file, missing file or fabricated digest fails. Preparation and review remain queued. Before publishing, add the exact publisher candidate `input_digest` as a separate `candidate_digest` to the reviewed proof; it binds the reviewed candidate to the later delivered receipt. The preparation-file digest and publisher-candidate digest serve different purposes.
+
+For `published`, retain the reviewed preparation digest, `reviewed:true`, and `candidate_digest`. Include `result.state:"published"`, plus the publisher's actual `input_digest`, `body_hash`, and current reconciled `blob_sha`. Include `remote:{"path":"entries/YYYY/MM/YYYY-MM-DD.md","state":"existing","blob_sha":"actual verified SHA"}` only after exact remote readback and repeat-publish reconciliation. The helper checks the canonical `narrative-writer/receipts.sqlite3` for the matching delivered candidate and exact owned body hash, and checks the current reconciled result against the current remote blob SHA. The original receipt's whole-file SHA may differ after preserved unowned edits or legacy cleanup; that alone does not invalidate an unchanged owned span. A prepared candidate or exit-zero command cannot substitute for the delivered receipt and actual current reconciliation.
+
+For `unchanged`, first acknowledge prepared and reviewed with the same exact preparation digest. Add `reviewed:true`, `reason:"no_meaningful_new_material"` or `"already_represented"`, and exact remote path proof. An existing path requires its current `blob_sha`, matching preparation's `existing_sha`. An absent path requires `state:"absent",path_history_checked:true,path_history_count:0` from the exact-path metadata check above. An unchanged judgment requires reading all prepared evidence and the existing entry; it is not an automatic empty-day judgment. Unread pages, omitted evidence or unavailable work inputs cannot settle published/unchanged outcomes.
+
+For `gap`, use an explicit reason from `manual_deletion`, `manual_edit`, `unsupported_source`, `incomplete_export`, `unavailable_source`, `oversize`, `capacity`, or `review_required`. A gap is a recorded coverage limitation, not a written day. Keep manual-deletion/manual-edit gaps blocked until deliberately resolved outside automatic planning. Do not automatically manufacture approval files. Report counts of pending/prepared/reviewed/published/unchanged/gap days and source coverage; never claim all available history is written while discovered frontiers, pending days or unreviewed gaps remain.

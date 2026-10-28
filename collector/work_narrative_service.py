@@ -73,7 +73,9 @@ def _write(path,value):
 
 def _load(path,model,ollama_path):
     if not path.exists():return {'version':1,'model':model,'ollama':str(ollama_path),'evidence':{},'outbox':[]}
-    if path.is_symlink() or path.stat().st_size>4*1024*1024:raise ValueError('ledger_review_required')
+    # This owned append-only metadata ledger grows with all available history.
+    # A fixed read ceiling would let successful writes strand both workers.
+    if path.is_symlink():raise ValueError('ledger_review_required')
     value=json.loads(path.read_text(encoding='utf-8'))
     if (type(value) is not dict or set(value)!={'version','model','ollama','evidence','outbox'}
             or value['version']!=1 or value['model']!=model or value['ollama']!=str(ollama_path)
@@ -197,10 +199,13 @@ def _fair_batches(days,pending):
 
 
 def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
-            client_factory=OllamaSession,publisher_factory=WorkMomentPublisher,exporter=export_day,now=None):
+            client_factory=OllamaSession,publisher_factory=WorkMomentPublisher,exporter=export_day,now=None,
+            history=False):
     if publish and (type(gh_path) is not str or not Path(gh_path).is_absolute()):raise ValueError('publish_gh_required')
     data,runtime=_runtime(config)
-    stop=data/'work-narrative-STOP'
+    class Stops:
+        def exists(self):return (data/'work-narrative-STOP').exists() or (history and (data/'work-history-STOP').exists())
+    stop=Stops()
     if stop.exists():return {'state':'stopped','checked_at':_now()}
     lock=worker_lock(runtime/'.worker')
     try:lock.__enter__()
@@ -212,6 +217,7 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
     status={'state':'running','checked_at':_now(),'processing':'on-device','processed':0,
             'delivered':0,'pending':0,'review_required':0,'withheld':0,'batches':0,
             'withheld_privacy':0,'withheld_duplicate':0,'withheld_semantic':0}
+    if history:status.update(oversize_omitted=0,capacity_omitted=0)
     def report():
         status['checked_at']=_now();_write(runtime/'status.json',status)
         return dict(status)
@@ -220,21 +226,65 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
     try:
         _legacy_gate(runtime,model,ollama_path)
         ledger_path=runtime/STATE_NAME;ledger=_load(ledger_path,model,ollama_path)
+        page_path=data/'work-history'/'pages.json';pages={}
+        if page_path.parent.is_symlink() or page_path.is_symlink():raise ValueError('runtime_binding')
+        if page_path.exists():pages=json.loads(page_path.read_text())
+        def omitted_record(record):
+            return 'outbox:'+record['id'] in pages.get(record['day'],{}).get('omissions',{})
         days=_days(day,now)
+        if history and day is None:raise ValueError('history_day_required')
         for record in ledger['outbox']:
-            if record['state']=='pending' and record['day'] not in days:days.append(record['day'])
+            if not history and record['state']=='pending' and not omitted_record(record) and record['day'] not in days:days.append(record['day'])
         if len(days)>14:raise ValueError('ledger_review_required')
         exports={}
+        if history:
+            page_path.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
         for selected in days:
             if stop.exists():status['state']='stopped';return report()
-            result=exporter(config['db'],selected,profile='work',max_items=10000,max_bytes=16*1024*1024)
+            options={'profile':'work','max_items':10000,'max_bytes':16*1024*1024}
+            if history:
+                previous=pages.get(selected,{})
+                # Probe the snapshot before resuming. Changed evidence restarts the scan;
+                # immutable ledger revisions still require explicit human review.
+                probe=exporter(config['db'],selected,**options)
+                if previous.get('snapshot')==probe.get('sourceFingerprint') and previous.get('offset',0):
+                    options.update(offset=previous['offset'],expected_snapshot=previous['snapshot'])
+                    result=exporter(config['db'],selected,**options)
+                else:result=probe
+                pages[selected]={'snapshot':result.get('sourceFingerprint'),'offset':options.get('offset',0),
+                    'oversize':max(previous.get('oversize',0),result.get('coverage',{}).get('oversize',0)),
+                    'capacity':previous.get('capacity',0),'omissions':previous.get('omissions',{})}
+                status['oversize_omitted']+=pages[selected]['oversize']
+                status['capacity_omitted']+=pages[selected]['capacity']
+            else:result=exporter(config['db'],selected,**options)
             # Strict work export check without sending any source to a model.
             from journal_collector.work_moments import build_handoff
             build_handoff(selected,[],result,{'processing':'on-device','privacy_reviewed':True,'grounding_reviewed':True,'approved':[]})
             exports[selected]=result
+        if history:
+            for selected in days:
+                used={moment['id'] for record in ledger['outbox'] if record['day']==selected
+                      and record['state']=='delivered' for moment in record['payload']['moments']}
+                for record in ledger['outbox']:
+                    if record['day']!=selected or record['state']!='pending' or omitted_record(record):continue
+                    additions={moment['id'] for moment in record['payload']['moments']}-used
+                    if len(used|additions)>32:
+                        # Retain every frozen byte and receipt. This terminal
+                        # sidecar outcome makes old impossible retries visible.
+                        pages[selected]['omissions']['outbox:'+record['id']]='capacity'
+                        pages[selected]['capacity']+=len(additions);status['capacity_omitted']+=len(additions)
+                    else:used.update(additions)
+            _write(page_path,pages)
         current={item['id']:item for value in exports.values() for item in value['evidence']}
+        historical_revisions={}
+        if exporter is export_day:
+            from journal_collector.work_history import day_revisions
+            historical_revisions={selected:day_revisions(config['db'],selected) for selected in days}
         for key,item in ledger['evidence'].items():
-            if item['day'] in exports and (key not in current or current[key]['revision']!=item['revision']):
+            if item['day'] in historical_revisions and historical_revisions[item['day']].get(key)!=item['revision']:
+                item['state']='review_required'
+            if item['day'] in exports and ((not history and item['day'] not in historical_revisions and key not in current) or
+                    (key in current and current[key]['revision']!=item['revision'])):
                 item['state']='review_required'
         if any(item['state']=='review_required' for item in ledger['evidence'].values()):
             _write(ledger_path,ledger);status['state']='review_required'
@@ -243,7 +293,8 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
         # Retry existing frozen payloads before starting inference.
         if publish:
             for record in ledger['outbox']:
-                if record['state']!='pending' or status['delivered']>=2:continue
+                if record['state']!='pending' or omitted_record(record) or status['delivered']>=2:continue
+                if history and record['day']!=day:continue
                 if stop.exists():status['state']='stopped';return report()
                 receipt=publisher().publish(record['payload'])
                 if type(receipt) is not dict or receipt.get('state') not in {'published','reconciled'}:
@@ -251,15 +302,40 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
                 record['state']='delivered';_write(ledger_path,ledger);status['delivered']+=1
         pending=[]
         for selected in days:
+            used={moment['id'] for record in ledger['outbox'] if record['day']==selected and not omitted_record(record) for moment in record['payload']['moments']}
             for item in exports[selected]['evidence']:
-                if item['id'] not in ledger['evidence']:pending.append((selected,item))
+                if item['id'] in ledger['evidence']:continue
+                if history and (len(item['text'])>MAX_CHARS or len(used)>=32):
+                    reason='oversize' if len(item['text'])>MAX_CHARS else 'capacity'
+                    ledger['evidence'][item['id']]={'day':selected,'revision':item['revision'],'state':'withheld'}
+                    if item['id'] not in pages[selected]['omissions']:
+                        pages[selected]['omissions'][item['id']]=reason
+                        pages[selected][reason]+=1;status[reason+'_omitted']+=1
+                else:pending.append((selected,item))
+        # Checkpoint explicit omissions before advancing the immutable evidence
+        # ledger. A crash retries the same IDs without losing or double counting.
+        if history:_write(page_path,pages);_write(ledger_path,ledger)
         # Each context is owned and torn down before any GitHub transport call.
         for selected,batch in _fair_batches(days,pending):
             if status['batches']>=2:break
             if stop.exists():status['state']='stopped';return report()
             bounded=dict(exports[selected],evidence=batch)
-            with client_factory(ollama_path,model) as client:
-                result=process_export(bounded,client)
+            try:
+                with client_factory(ollama_path,model) as client:
+                    result=process_export(bounded,client)
+            except LocalModelError as error:
+                # UTF-8/escaped request overhead can exceed the payload bound
+                # even when the character bound fits. Never truncate or retry
+                # an intrinsically oversized historical request forever.
+                if not history or error.code!='local_model_batch_bounds':raise
+                for item in batch:
+                    ledger['evidence'][item['id']]={'day':selected,'revision':item['revision'],'state':'withheld'}
+                    if item['id'] not in pages[selected]['omissions']:
+                        pages[selected]['omissions'][item['id']]='oversize'
+                        pages[selected]['oversize']+=1;status['oversize_omitted']+=1
+                status['batches']+=1
+                _write(page_path,pages);_write(ledger_path,ledger)
+                continue
             status['batches']+=1;status['processed']+=len(batch)
             status['withheld']+=result['withheld']
             for key in ('withheld_privacy','withheld_duplicate','withheld_semantic'):
@@ -270,12 +346,24 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
                 ledger['evidence'][item['id']]={'day':selected,'revision':item['revision'],
                     'state':'withheld' if item['id'] in result['withheld_ids'] else 'processed'}
             handoff=result['handoff'];record=None
+            if history:
+                used={moment['id'] for entry in ledger['outbox'] if entry['day']==selected and not omitted_record(entry) for moment in entry['payload']['moments']}
+                available=max(0,32-len(used))
+                omitted=max(0,len(handoff['moments'])-available)
+                if omitted:
+                    for moment in handoff['moments'][available:]:
+                        key='moment:'+moment['id']
+                        if key not in pages[selected]['omissions']:
+                            pages[selected]['omissions'][key]='capacity'
+                            pages[selected]['capacity']+=1;status['capacity_omitted']+=1
+                    handoff=dict(handoff,moments=handoff['moments'][:available])
             if handoff['moments']:
                 digest=_digest(handoff)
                 record={'id':digest,'day':selected,'payload':handoff,'digest':digest,'state':'pending',
                         'evidence':result['approved_ids']}
                 ledger['outbox'].append(record)
             # Freeze reviewed wording and revisions before any network write.
+            if history:_write(page_path,pages)
             _write(ledger_path,ledger)
             if publish and record is not None and status['delivered']<2:
                 if stop.exists():status['state']='stopped';return report()
@@ -284,8 +372,15 @@ def execute(config,*,model,ollama_path,day=None,publish=False,gh_path=None,
                     raise WorkMomentError('verification')
                 record['state']='delivered';_write(ledger_path,ledger);status['delivered']+=1
         status['pending']=sum(item['id'] not in ledger['evidence'] for value in exports.values() for item in value['evidence'])
-        status['pending']+=sum(max(0,value.get('coverage',{}).get('eligible',len(value['evidence']))-len(value['evidence'])) for value in exports.values())
-        status['frozen_pending']=sum(record['state']=='pending' for record in ledger['outbox'])
+        if history:
+            for selected,value in exports.items():
+                if all(item['id'] in ledger['evidence'] for item in value['evidence']):
+                    next_offset=value.get('nextOffset')
+                    if next_offset is not None:
+                        pages[selected]['offset']=next_offset;status['pending']+=1
+            _write(page_path,pages)
+        else:status['pending']+=sum(max(0,value.get('coverage',{}).get('eligible',len(value['evidence']))-len(value['evidence'])) for value in exports.values())
+        status['frozen_pending']=sum(record['state']=='pending' and not omitted_record(record) for record in ledger['outbox'])
         status['state']=('review_required' if status['review_required'] else
                          'preview' if not publish and status['frozen_pending'] else
                          'pending' if status['pending'] or status['frozen_pending'] else 'idle')
@@ -334,6 +429,7 @@ def main(argv=None):
     parser.add_argument('--config',type=Path,required=True);parser.add_argument('--model',required=True)
     parser.add_argument('--ollama',required=True);parser.add_argument('--gh')
     parser.add_argument('--day');parser.add_argument('--publish',action='store_true')
+    parser.add_argument('--history',action='store_true',help='Snapshot-paged source-local pass for an explicit --day')
     parser.add_argument('--once',action='store_true',help='One bounded pass (the default)')
     parser.add_argument('--dry-run',action='store_true');parser.add_argument('--verify-handoff-only',action='store_true')
     parser.add_argument('--quarantine-legacy',action='store_true')
@@ -347,7 +443,7 @@ def main(argv=None):
         elif args.verify_handoff_only:
             if not args.gh or not Path(args.gh).is_absolute():raise ValueError('publish_gh_required')
             result=verify_published(config,model=args.model,ollama_path=args.ollama,gh_path=args.gh)
-        else:result=execute(config,model=args.model,ollama_path=args.ollama,gh_path=args.gh,day=args.day,publish=args.publish)
+        else:result=execute(config,model=args.model,ollama_path=args.ollama,gh_path=args.gh,day=args.day,publish=args.publish,history=args.history)
     except Exception:result={'state':'error','error_code':'work_configuration_or_verification_failed','checked_at':_now()}
     print(json.dumps(result,ensure_ascii=True,allow_nan=False))
     return 1 if result.get('state')=='error' else 0

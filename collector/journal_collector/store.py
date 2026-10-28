@@ -77,7 +77,9 @@ class Store:
                                       (source, cursor_key)).fetchone()
         return json.loads(row['cursor']) if row and row['cursor'] is not None else None
 
-    def ingest_batch(self, batch):
+    def ingest_batch(self, batch, *, preserve_existing_complete=False):
+        if type(preserve_existing_complete) is not bool:
+            raise ValueError('preserve_existing_complete must be boolean')
         if not isinstance(batch, dict):
             raise ValueError('batch must be an object')
         batch_id = _identifier(batch.get('batch_id'), 'batch_id')
@@ -112,8 +114,11 @@ class Store:
                 raise ValueError('provenance must be an object')
             _timestamp(item.get('source_time'), 'source_time', nullable=True)
             _timestamp(item.get('observed_at'), 'observed_at')
-        payload_hash = hashlib.sha256(_json(batch).encode('utf-8')).hexdigest()
+        payload = [batch, {'preserve_existing_complete': True}] if preserve_existing_complete else batch
+        payload_hash = hashlib.sha256(_json(payload).encode('utf-8')).hexdigest()
         result = dict.fromkeys(('new', 'revised', 'unchanged', 'incomplete', 'excluded'), 0)
+        if preserve_existing_complete:
+            result.update(preserved=0, conflicting=0)
         result['batch_id'] = batch_id
         now = datetime.now(timezone.utc).isoformat()
         conn = self.connection
@@ -131,6 +136,15 @@ class Store:
                     result['excluded'] += 1
                     continue
                 old = conn.execute('SELECT * FROM messages WHERE message_key=?', (key,)).fetchone()
+                if preserve_existing_complete and old and old['complete']:
+                    result['preserved'] += 1
+                    candidate = {'conversation_id': item['conversation_id'], 'role': item['role'],
+                                 'text': item.get('text'), 'source_time': item.get('source_time'),
+                                 'observed_at': item['observed_at'], 'complete': int(item['complete']),
+                                 'provenance': _json(item.get('provenance', {}))}
+                    if any(old[field] != value for field, value in candidate.items()):
+                        result['conflicting'] += 1
+                    continue
                 complete = item['complete']
                 changed = complete and (not old or not old['complete'] or
                                             old['text'] != item['text'] or old['role'] != item['role'])

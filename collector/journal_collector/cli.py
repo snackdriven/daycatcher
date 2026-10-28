@@ -37,6 +37,9 @@ def parser():
         command.add_argument('--config', type=Path)
         command.add_argument('--db', type=Path)
         command.add_argument('--data-dir', type=Path)
+        if name == 'ingest':
+            command.add_argument('--historical', '--preserve-existing-complete',
+                                 dest='preserve_existing_complete', action='store_true')
         if name in ('scan', 'watch'):
             command.add_argument('--codex-root', type=Path, action='append')
             command.add_argument('--claude-root', type=Path, action='append')
@@ -160,7 +163,7 @@ def execute(args):
             raw = sys.stdin.buffer.read(33554433)
             if len(raw) > 33554432:
                 raise ValueError('Batch exceeds 32 MiB limit')
-            return store.ingest_batch(json.loads(raw))
+            return store.ingest_batch(json.loads(raw), preserve_existing_complete=args.preserve_existing_complete)
         if args.command == 'cursor':
             return store.get_cursor(args.source, args.key)
         if args.command == 'status':

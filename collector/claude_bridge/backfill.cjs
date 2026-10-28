@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path');
 const {spawn}=require('node:child_process');
 const {app,BrowserWindow,session}=require('electron');
 const {sha}=require('./adapter.cjs');
-const {validate,checkSource,inventory,collect}=require('./backfill_logic.cjs');
+const {validate,checkSource,inventory,collect,boundedJson}=require('./backfill_logic.cjs');
 const held=[],children=new Set();let config,window,deadline,current={status:'starting'},finished=false;
 const safeError=e=>/^HTTP_(401|403)$/.test(e?.message||'')?'AUTHENTICATION_REQUIRED':/^[A-Z_]+(?:_\d+)?$/.test(e?.message||'')?e.message:'BACKFILL_RUNTIME_FAILED';
 function release(){for(const child of children)try{child.kill();}catch{}for(const file of held)try{fs.unlinkSync(file);}catch{}held.length=0;}
@@ -14,7 +14,7 @@ function finish(code,extra){if(finished)return;finished=true;clearTimeout(deadli
 function acquire(file){try{const fd=fs.openSync(file,'wx');fs.writeFileSync(fd,String(process.pid));fs.closeSync(fd);held.push(file);}catch(error){if(error.code!=='EEXIST')throw error;const pid=Number(fs.readFileSync(file,'utf8'));if(!Number.isSafeInteger(pid)||pid<1)throw Error('LOCK_INVALID');try{process.kill(pid,0);}catch(e){if(e.code==='ESRCH'){fs.unlinkSync(file);return acquire(file);}throw Error('LOCK_CHECK_FAILED');}throw Error('BRIDGE_ALREADY_RUNNING');}}
 function checkStop(){if(fs.existsSync(path.join(config.run_dir,'STOP')))throw Error('STOPPED');}
 function core(batch){return new Promise((resolve,reject)=>{
- checkStop();const child=spawn(config.python,['-m','journal_collector','ingest','--db',config.db],{cwd:config.package_root,windowsHide:true,env:{...process.env,PYTHONPATH:config.package_root},stdio:['pipe','pipe','pipe']});children.add(child);
+ checkStop();const child=spawn(config.python,['-m','journal_collector','ingest','--db',config.db,'--historical'],{cwd:config.package_root,windowsHide:true,env:{...process.env,PYTHONPATH:config.package_root},stdio:['pipe','pipe','pipe']});children.add(child);
  let output='',size=0;const timer=setTimeout(()=>{child.kill();reject(Error('CORE_TIMEOUT'));},60000);
  child.stdout.on('data',chunk=>{size+=chunk.length;if(size>1048576)child.kill();else output+=chunk;});child.stderr.on('data',()=>{});
  child.on('error',()=>{clearTimeout(timer);children.delete(child);reject(Error('CORE_LAUNCH_FAILED'));});
@@ -49,10 +49,11 @@ try{
   await Promise.race([window.loadURL('https://claude.ai/new').catch(()=>{}),new Promise(resolve=>setTimeout(resolve,20000))]);
   const authEnd=Date.now()+15000;while(!orgId&&Date.now()<authEnd){checkStop();await new Promise(resolve=>setTimeout(resolve,250));}
   if(!orgId)throw Error('AUTHENTICATION_REQUIRED');checkSource(orgId,config.expected_source);
+  const budget={remaining:16*1024*1024};
   const read=async url=>{
    checkStop();const parsed=new URL(url);if(parsed.origin!=='https://claude.ai'||!parsed.pathname.startsWith('/api/organizations/'+orgId+'/'))throw Error('URL_REJECTED');
    const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),45000);
-   try{const response=await agentSession.fetch(url,{method:'GET',credentials:'include',redirect:'error',signal:abort.signal});if(!response.ok)throw Error('HTTP_'+response.status);return await response.json();}finally{clearTimeout(timer);}
+   try{const response=await agentSession.fetch(url,{method:'GET',credentials:'include',redirect:'error',signal:abort.signal});if(!response.ok)throw Error('HTTP_'+response.status);return await boundedJson(response,budget);}finally{clearTimeout(timer);}
   };
   receipt({status:config.mode==='inventory'?'listing_metadata':'collecting'});
   const options={...config,orgId,read,ingest,checkStop,run_id:sha(config.run_dir).slice(0,20)};

@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path');
-const {timestamp,validate,checkSource,probe,inventory,selectRows,collect}=require('./backfill_logic.cjs');
+const {timestamp,validate,checkSource,probe,inventory,selectRows,collect,boundedJson}=require('./backfill_logic.cjs');
 const {sha}=require('./adapter.cjs');
 const org='00000000-1111-2222-3333-444444444444',source='claude-chat:'+sha(org).slice(0,20);
 const date='2026-10-25T12:00:00Z';
@@ -13,8 +13,16 @@ test('timestamps require timezone and calendar-valid dates and clock values',()=
 });
 test('validates strict small bounds, absolute paths, source, and collect window',()=>{
  assert.equal(validate(config()).max_conversations,20);
- for(const override of [{max_pages:11},{max_conversations:21},{page_size:31},{max_pages:0},{python:'python'},{expected_source:'wrong'},{exclude_ids:['bad/id']},{mode:'login'},{mode:'collect',since:date,until:date}])assert.throws(()=>validate({...config(),...override}));
+ for(const override of [{start_offset:-1},{start_offset:0.5},{start_offset:10000001},{max_pages:11},{max_conversations:21},{page_size:31},{max_pages:0},{python:'python'},{expected_source:'wrong'},{exclude_ids:['bad/id']},{mode:'login'},{mode:'collect',since:date,until:date}])assert.throws(()=>validate({...config(),...override}));
  assert.equal(validate({...config(),mode:'collect',since:'2026-10-01T00:00:00Z',until:date}).mode,'collect');
+});
+
+test('response parsing enforces a shared pass byte budget and cancels overflow',async()=>{
+ const budget={remaining:4};
+ assert.deepEqual(await boundedJson(new Response('{}'),budget),{});
+ assert.equal(budget.remaining,2);
+ await assert.rejects(boundedJson(new Response('[1]'),budget),/PASS_BYTE_LIMIT/);
+ await assert.rejects(boundedJson({},budget),/RESPONSE_STREAM_REQUIRED/);
 });
 test('source scope mismatch is checked before any metadata or body request',async()=>{
  let requests=0;const o={...options(),expected_source:'claude-chat:'+'f'.repeat(20),read:()=>requests++};
@@ -28,11 +36,14 @@ test('probe detection is strict and supports known local exclusions',()=>{
  assert.equal(probe(row('a',{name:'MEAT_SUITLESS'})),false);
  assert.equal(probe(row('known'),['known']),true);
 });
-test('inventory contains only metadata and caps requests at 90 rows',async()=>{
+test('inventory contains only metadata and resumes bounded offsets beyond 90',async()=>{
  const urls=[];const result=await inventory({...options(),read:async url=>{urls.push(url);const u=new URL(url),offset=Number(u.searchParams.get('offset')),n=Number(u.searchParams.get('limit'));return Array.from({length:n},(_,i)=>row('conversation'+(offset+i),{name:'Private title never retained',body:'private body never retained'}));}});
- assert.equal(urls.length,3);assert.equal(result.rows.length,90);assert.equal(result.summary.list_reached_end,false);
+ assert.equal(urls.length,10);assert.equal(result.rows.length,300);assert.equal(result.summary.list_reached_end,false);
+ assert.equal(result.summary.next_offset,300);assert.equal(result.summary.start_offset,0);
+ const later=await inventory({...options(),start_offset:300,max_pages:1,read:async url=>{assert.equal(new URL(url).searchParams.get('offset'),'300');return [];}});
+ assert.equal(later.summary.list_reached_end,true);assert.equal(later.summary.next_offset,null);
  assert.deepEqual(Object.keys(result.rows[0]),['uuid','updated_at','probe']);assert.equal(JSON.stringify(result).includes('Private'),false);
- assert.equal(JSON.stringify(result.summary).includes('conversation'),false);assert.equal(result.summary.dates['2026-10-25'],90);
+ assert.equal(JSON.stringify(result.summary).includes('conversation'),false);assert.equal(result.summary.dates['2026-10-25'],300);
 });
 test('inventory respects requested page cap and records actual end',async()=>{
  const r=await inventory({...options(),max_pages:1,read:async()=>[row()]});assert.equal(r.summary.pages,1);assert.equal(r.summary.list_reached_end,true);

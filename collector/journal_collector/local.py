@@ -158,7 +158,8 @@ def _probe(stream, end):
             'tail_start': tail_start, 'tail_hash': _hash(tail)}, len(prefix) + len(tail)
 
 
-def collect_local(store, *, codex_roots=None, claude_roots=None, since=None, max_bytes=16777216):
+def collect_local(store, *, codex_roots=None, claude_roots=None, since=None, max_bytes=16777216,
+                  cursor_namespace=None, preserve_existing_complete=False):
     """Collect all discovered files incrementally. None roots use home; [] disables.
 
     since accepts an ISO timestamp or datetime, with naive values treated as UTC.
@@ -168,6 +169,10 @@ def collect_local(store, *, codex_roots=None, claude_roots=None, since=None, max
     """
     if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
         raise ValueError('max_bytes must be a positive integer')
+    if cursor_namespace is not None:
+        _source_identifier(cursor_namespace, 'cursor_namespace')
+        if len(cursor_namespace) > 100:
+            raise ValueError('cursor_namespace too long')
     cutoff = _instant(since) if since is not None else None
     horizon = cutoff.isoformat() if cutoff else None
     observed = datetime.now(timezone.utc).isoformat()
@@ -180,7 +185,7 @@ def collect_local(store, *, codex_roots=None, claude_roots=None, since=None, max
         errors.extend(discovery_errors)
         for path in paths:
             key = 'file:' + _hash(str(path.resolve()))
-            previous = store.get_cursor(source, key) or {}
+            previous = store.get_cursor(source, (cursor_namespace + ':' if cursor_namespace else '') + key) or {}
             entries.append((previous.get('checked_at', ''), source, str(path), path, key, previous))
     entries.sort(key=lambda e: e[:3])
     summary = {'status': 'complete', 'files_discovered': len(entries), 'files': [], 'bytes_read': 0,
@@ -270,9 +275,13 @@ def collect_local(store, *, codex_roots=None, claude_roots=None, since=None, max
                         'detail': 'discovered file read through complete lines; unsupported or malformed records remain visible',
                         'backlog_bytes': backlog, 'malformed_lines': cursor['malformed_lines'],
                         'incomplete_messages': cursor['incomplete_messages']}
-            batch = {'source': source, 'cursor_key': key, 'cursor': cursor, 'coverage': coverage, 'messages': messages}
-            batch['batch_id'] = _hash(json.dumps(batch, sort_keys=True, ensure_ascii=False))
-            result = store.ingest_batch(batch)
+            batch = {'source': source, 'cursor_key': (cursor_namespace + ':' if cursor_namespace else '') + key,
+                     'cursor': cursor, 'coverage': coverage, 'messages': messages}
+            batch['batch_id'] = (cursor_namespace + ':' if cursor_namespace else '') + _hash(json.dumps(batch, sort_keys=True, ensure_ascii=False))
+            if preserve_existing_complete:
+                result = store.ingest_batch(batch, preserve_existing_complete=True)
+            else:
+                result = store.ingest_batch(batch)
             counts.update({k: v for k, v in result.items() if k != 'batch_id' and isinstance(v, int)})
             summary['messages_observed'] += len(messages)
             summary['backlog_bytes'] += backlog
@@ -285,11 +294,14 @@ def collect_local(store, *, codex_roots=None, claude_roots=None, since=None, max
                 summary['status'] = 'partial'
         except OSError as exc:
             errors.append({'source': source, 'file_key': key, 'error': type(exc).__name__})
-            failure = {'source': source, 'cursor_key': key, 'cursor': previous,
+            failure = {'source': source, 'cursor_key': (cursor_namespace + ':' if cursor_namespace else '') + key, 'cursor': previous,
                        'coverage': {'status': 'error', 'detail': 'source read failed or changed during scan; previous checkpoint retained'},
                        'messages': []}
-            failure['batch_id'] = _hash(json.dumps([source, key, observed, 'read-error']))
-            store.ingest_batch(failure)
+            failure['batch_id'] = (cursor_namespace + ':' if cursor_namespace else '') + _hash(json.dumps([source, key, observed, 'read-error']))
+            if preserve_existing_complete:
+                store.ingest_batch(failure, preserve_existing_complete=True)
+            else:
+                store.ingest_batch(failure)
     summary['skip_counts'] = dict(skips)
     summary['counts'] = dict(counts)
     if errors:
