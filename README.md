@@ -14,7 +14,7 @@ Personal Windows and a work Mac collect context for the same private journal. Co
 
 - **Codex and Claude Code:** hidden Python readers collect native local logs. The visible desktop apps can be closed.
 - **Regular Claude chats:** a hidden Electron bridge uses its own signed-in account session, independently of the visible Claude app. Bounded account reads and internal endpoint changes limit what it can catch.
-- **Work Mac:** local Codex and Claude Code collection is running. Raw work transcripts stay on the Mac. Work publishing is paused while the controlled-language handoff is installed and checked.
+- **Work Mac:** local Codex and Claude Code collection is running. Raw work transcripts stay on the Mac. The hourly controlled-language handoff is installed, and its generic work descriptions have reached the shared journal.
 - **ChatGPT:** an hourly Codex app automation reads supported user messages. Each pass lists at most 50 recent mixed chats, selects up to five ChatGPT chats and reads at most ten turns each. Assistant bodies aren't available through this path. Codex and its connected ChatGPT reader need to be available; a separate ChatGPT window isn't needed.
 - **Dot:** its source-side producer sends fixed topic fragments through private `imports/dot/v1/YYYY-MM-DD.json` files. Its first real file and journal support were verified. Dot reports its hourly schedule saved and tested; the cloud scheduler hasn't been independently inspected.
 - **Muse:** planned, still unconnected. Source access, authentication and reliable original timestamps need verification.
@@ -28,7 +28,7 @@ That's the verified setup as of October 27, 2026. Coverage is partial, including
 
 Source timestamps determine the journal day, with **03:00 as the cutoff in America/Chicago**. The conversation at 01:00 still belongs to the day you haven't gone to bed from. The calendar can cope.
 
-The [narrative writer](collector/docs/narrative-writer.md) keeps specific, supported moments and turns them into a few natural paragraphs. Personal writing has completed an hourly run, with source review and duplicate-free readback. Useful work moments still need the controlled Mac handoff connected.
+The [narrative writer](collector/docs/narrative-writer.md) keeps specific, supported moments and turns them into a few natural paragraphs. Personal writing has completed an hourly run. Work and personal paragraphs have also been written together, reviewed against their inputs and read back without duplicates.
 
 Wanting to make a podcast does not become listening to one. Asking for a fix does not become finishing it. Assistant suggestions and pasted examples do not become things you supposedly did.
 
